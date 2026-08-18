@@ -5,3 +5,14 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+
+# 🚨 Security & Credentials (민감 정보 및 자격 증명)
+AWS.txt
+*.pem
+*.key
+*.cer
+*.crt
+.env
+.env.*
+*.secret
+*credentials*

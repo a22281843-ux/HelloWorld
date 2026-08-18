@@ -9,21 +9,21 @@
   <!-- Google Fonts (Plus Jakarta Sans & JetBrains Mono) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
   <style>
     :root {
       --bg: #090a0f;
       --card-bg: rgba(255, 255, 255, 0.03);
       --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(255, 255, 255, 0.2);
+      --card-border-hover: rgba(255, 255, 255, 0.18);
       --text-main: #f8fafc;
       --text-sub: #94a3b8;
       --text-muted: #64748b;
-      --accent: #6366f1;
-      --accent-glow: rgba(99, 102, 241, 0.25);
+      --accent: #818cf8;
+      --accent-glow: rgba(129, 140, 248, 0.2);
       --gradient-title: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
-      --gradient-brand: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+      --gradient-time: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
     }
 
     * {
@@ -41,22 +41,22 @@
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      padding: 40px 24px;
+      padding: 36px 24px;
       overflow-x: hidden;
       position: relative;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Subtle Ambient Aurora */
+    /* Ambient Glow */
     .ambient-aurora {
       position: fixed;
-      top: 20%;
+      top: 35%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 600px;
-      height: 400px;
-      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, rgba(192, 132, 252, 0.05) 50%, transparent 70%);
-      filter: blur(80px);
+      width: 650px;
+      height: 450px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, rgba(192, 132, 252, 0.04) 50%, transparent 70%);
+      filter: blur(90px);
       pointer-events: none;
       z-index: 0;
     }
@@ -83,15 +83,20 @@
     .brand-dot {
       width: 7px;
       height: 7px;
-      background: #818cf8;
+      background: var(--accent);
       border-radius: 50%;
-      box-shadow: 0 0 10px #818cf8;
+      box-shadow: 0 0 10px var(--accent);
     }
 
-    .time-status {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      font-family: 'JetBrains Mono', monospace;
+    .status-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(129, 140, 248, 0.1);
+      border: 1px solid rgba(129, 140, 248, 0.2);
+      padding: 4px 10px;
+      border-radius: 100px;
+      letter-spacing: 0.5px;
     }
 
     /* Main Container */
@@ -102,27 +107,14 @@
       flex-direction: column;
       align-items: center;
       text-align: center;
-      gap: 36px;
+      gap: 32px;
       z-index: 10;
       margin: auto 0;
     }
 
-    /* Hero Text */
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 14px;
-      border-radius: 100px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: var(--text-sub);
-      letter-spacing: 0.5px;
-    }
-
+    /* Hero Heading */
     .hero-title {
-      font-size: clamp(3rem, 7vw, 4.8rem);
+      font-size: clamp(2.8rem, 6.5vw, 4.2rem);
       font-weight: 800;
       letter-spacing: -2px;
       line-height: 1.05;
@@ -131,12 +123,88 @@
       -webkit-text-fill-color: transparent;
     }
 
-    .hero-desc {
-      font-size: 1.15rem;
+    /* Center Live Widget (Date, Time, Location) */
+    .center-info-card {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.3s ease;
+    }
+
+    .center-info-card:hover {
+      border-color: var(--card-border-hover);
+    }
+
+    /* Big Digital Clock */
+    .live-clock-wrap {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .live-clock {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(2.4rem, 6vw, 3.4rem);
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1;
+      background: var(--gradient-time);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .clock-ampm {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    /* Date & Location Rows */
+    .info-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      font-size: 0.95rem;
       color: var(--text-sub);
-      font-weight: 400;
-      line-height: 1.6;
-      max-width: 480px;
+    }
+
+    .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .meta-divider {
+      color: var(--card-border);
+    }
+
+    .location-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+
+    .location-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 8px #34d399;
     }
 
     /* Minimal Interactive Input */
@@ -152,10 +220,10 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 16px;
-      padding: 18px 56px 18px 20px;
+      padding: 16px 52px 16px 20px;
       color: var(--text-main);
       font-family: inherit;
-      font-size: 1rem;
+      font-size: 0.95rem;
       outline: none;
       transition: all 0.25s ease;
       backdrop-filter: blur(12px);
@@ -174,7 +242,7 @@
 
     .send-btn {
       position: absolute;
-      right: 10px;
+      right: 8px;
       width: 36px;
       height: 36px;
       border-radius: 10px;
@@ -198,12 +266,12 @@
       transform: scale(0.95);
     }
 
-    /* Clean Toast / Feedback Message */
+    /* Feedback Message */
     .status-msg {
-      font-size: 0.9rem;
-      color: #818cf8;
+      font-size: 0.88rem;
+      color: var(--accent);
       font-weight: 500;
-      min-height: 24px;
+      min-height: 22px;
       opacity: 0;
       transition: opacity 0.3s ease;
     }
@@ -233,6 +301,16 @@
       body {
         padding: 24px 16px;
       }
+      .center-info-card {
+        padding: 20px 16px;
+      }
+      .info-meta-row {
+        flex-direction: column;
+        gap: 6px;
+      }
+      .meta-divider {
+        display: none;
+      }
       footer {
         flex-direction: column;
         gap: 10px;
@@ -243,7 +321,7 @@
 </head>
 <body>
 
-  <!-- Subtle background glow -->
+  <!-- Background glow -->
   <div class="ambient-aurora"></div>
 
   <!-- Header -->
@@ -252,19 +330,43 @@
       <div class="brand-dot"></div>
       <span>vibe.dev</span>
     </div>
-    <div class="time-status" id="clock">00:00:00</div>
+    <div class="status-badge">ONLINE</div>
   </header>
 
   <!-- Main Content -->
   <main>
-    <div class="tag">Vibe Coding Era</div>
-
     <h1 class="hero-title">Hello, World.</h1>
 
-    <p class="hero-desc">
-      생각을 코드로, 바이브를 현실로.<br>
-      오늘 당신의 상상은 무엇인가요?
-    </p>
+    <!-- Center Widget: Date, Time & Location -->
+    <div class="center-info-card">
+      <div class="live-clock-wrap">
+        <span id="live-time" class="live-clock">00:00:00</span>
+        <span id="live-ampm" class="clock-ampm">AM</span>
+      </div>
+
+      <div class="info-meta-row">
+        <div class="meta-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          <span id="live-date">2026년 8월 18일 화요일</span>
+        </div>
+
+        <span class="meta-divider">|</span>
+
+        <div class="meta-item location-badge">
+          <span class="location-dot"></span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #34d399;">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span id="live-location">대한민국 (Asia/Seoul)</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Clean Input -->
     <div class="input-wrapper">
@@ -294,16 +396,78 @@
   </footer>
 
   <script>
-    // Live Clock
-    function updateClock() {
-      const now = new Date();
-      const timeString = now.toTimeString().split(' ')[0];
-      document.getElementById('clock').textContent = timeString;
-    }
-    setInterval(updateClock, 1000);
-    updateClock();
+    // Live Time, Date & Location Engine
+    const timeEl = document.getElementById('live-time');
+    const ampmEl = document.getElementById('live-ampm');
+    const dateEl = document.getElementById('live-date');
+    const locationEl = document.getElementById('live-location');
 
-    // Clean Interaction Logic
+    const weekdays = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+
+    function updateDateTime() {
+      const now = new Date();
+      
+      // Hours, Minutes, Seconds (12h format with AM/PM)
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      
+      hours = hours % 12;
+      hours = hours ? hours : 12; // 0 hour should be 12
+      const formattedHours = String(hours).padStart(2, '0');
+
+      timeEl.textContent = `${formattedHours}:${minutes}:${seconds}`;
+      ampmEl.textContent = ampm;
+
+      // Date Format: 2026년 8월 18일 화요일
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const dayName = weekdays[now.getDay()];
+      dateEl.textContent = `${year}년 ${month}월 ${day}일 ${dayName}`;
+    }
+
+    // Detect Location via Timezone & Geolocation API
+    function detectLocation() {
+      try {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        let city = "대한민국";
+        
+        if (timeZone.includes("Seoul")) {
+          city = "서울, 대한민국";
+        } else if (timeZone.includes("Tokyo")) {
+          city = "도쿄, 일본";
+        } else if (timeZone.includes("New_York")) {
+          city = "뉴욕, 미국";
+        } else if (timeZone.includes("London")) {
+          city = "런던, 영국";
+        } else {
+          city = timeZone.replace(/_/g, ' ');
+        }
+        
+        locationEl.textContent = `${city} (${timeZone})`;
+      } catch (e) {
+        locationEl.textContent = "대한민국 (Asia/Seoul)";
+      }
+
+      // Optional Geolocation for exact local precision
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul";
+            locationEl.textContent = `현재 위치 (${timeZone})`;
+          },
+          () => {} // fallback to timezone silently
+        );
+      }
+    }
+
+    setInterval(updateDateTime, 1000);
+    updateDateTime();
+    detectLocation();
+
+    // Interaction Logic
     const promptInput = document.getElementById('prompt-input');
     const sendBtn = document.getElementById('send-btn');
     const statusMsg = document.getElementById('status-msg');

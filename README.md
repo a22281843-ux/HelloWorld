@@ -9,8 +9,9 @@
 ## ✨ Features
 
 - 🌿 **Clean Minimal Aesthetics**: 눈이 편안하고 직관적인 다크 미니멀 디자인
+- ⏱️ **Live Clock & Date**: 중앙에 배치된 실시간 디지털 시계(초단위) 및 한국어 날짜 표시
+- 📍 **Location Detection**: 브라우저 기반 실시간 위치/타임존 감지
 - 💬 **Idea Input & Flow**: 생각을 기록하고 바이브를 시작하는 간결한 인터랙션
-- ⏱️ **Live Status**: 심플한 헤더 시계 및 미니멀 레이아웃
 
 ---
 

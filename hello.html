@@ -16,7 +16,7 @@
       --bg: #090a0f;
       --card-bg: rgba(255, 255, 255, 0.03);
       --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(255, 255, 255, 0.18);
+      --card-border-hover: rgba(255, 255, 255, 0.2);
       --text-main: #f8fafc;
       --text-sub: #94a3b8;
       --text-muted: #64748b;
@@ -24,6 +24,7 @@
       --accent-glow: rgba(129, 140, 248, 0.2);
       --gradient-title: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
       --gradient-time: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      --gradient-btn: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
     }
 
     * {
@@ -107,7 +108,7 @@
       flex-direction: column;
       align-items: center;
       text-align: center;
-      gap: 32px;
+      gap: 28px;
       z-index: 10;
       margin: auto 0;
     }
@@ -129,7 +130,7 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 24px;
-      padding: 28px 24px;
+      padding: 26px 24px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -205,6 +206,47 @@
       border-radius: 50%;
       background: #34d399;
       box-shadow: 0 0 8px #34d399;
+    }
+
+    /* Store Action Link Button */
+    .store-action-wrap {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .store-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 100px;
+      background: var(--card-bg);
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .store-btn:hover {
+      background: rgba(129, 140, 248, 0.12);
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(129, 140, 248, 0.3);
+      color: #fff;
+    }
+
+    .store-btn svg {
+      transition: transform 0.2s ease;
+    }
+
+    .store-btn:hover .arrow-icon {
+      transform: translateX(3px);
     }
 
     /* Minimal Interactive Input */
@@ -368,6 +410,22 @@
       </div>
     </div>
 
+    <!-- Center Link Button: https://sunnyk.store/ -->
+    <div class="store-action-wrap">
+      <a href="https://sunnyk.store/" target="_blank" rel="noopener noreferrer" class="store-btn" id="store-link-btn" title="sunnyk.store 바로가기">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        <span>sunnyk.store 바로가기</span>
+        <svg class="arrow-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="7" y1="17" x2="17" y2="7"></line>
+          <polyline points="7 7 17 7 17 17"></polyline>
+        </svg>
+      </a>
+    </div>
+
     <!-- Clean Input -->
     <div class="input-wrapper">
       <input 
@@ -414,7 +472,7 @@
       const ampm = hours >= 12 ? 'PM' : 'AM';
       
       hours = hours % 12;
-      hours = hours ? hours : 12; // 0 hour should be 12
+      hours = hours ? hours : 12;
       const formattedHours = String(hours).padStart(2, '0');
 
       timeEl.textContent = `${formattedHours}:${minutes}:${seconds}`;
@@ -428,7 +486,7 @@
       dateEl.textContent = `${year}년 ${month}월 ${day}일 ${dayName}`;
     }
 
-    // Detect Location via Timezone & Geolocation API
+    // Detect Location via Timezone
     function detectLocation() {
       try {
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -449,17 +507,6 @@
         locationEl.textContent = `${city} (${timeZone})`;
       } catch (e) {
         locationEl.textContent = "대한민국 (Asia/Seoul)";
-      }
-
-      // Optional Geolocation for exact local precision
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul";
-            locationEl.textContent = `현재 위치 (${timeZone})`;
-          },
-          () => {} // fallback to timezone silently
-        );
       }
     }
 

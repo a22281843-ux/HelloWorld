@@ -5,7 +5,7 @@
 //|  - 포지션 단위로 묶어서 MQL5\Files\TradeDesk_history.csv 에 저장 |
 //+------------------------------------------------------------------+
 #property copyright "Trade Desk"
-#property version   "1.00"
+#property version   "1.01"
 #property description "Trade Desk 매매일지용 거래내역 자동 내보내기 (읽기 전용, 주문 안 함)"
 
 input int    InpDays     = 365;                     // 내보낼 기간(일), 0 = 전체
@@ -41,6 +41,8 @@ int OnInit()
   {
    EventSetTimer(MathMax(2, InpTimerSec));
    Export();
+   // Trade Desk에서 파일을 고를 때 붙여넣을 전체 경로
+   Print("TradeDesk: 파일 위치 → ", TerminalInfoString(TERMINAL_DATA_PATH), "\\MQL5\\Files\\", InpFileName);
    return(INIT_SUCCEEDED);
   }
 

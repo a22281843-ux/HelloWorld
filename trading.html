@@ -188,6 +188,15 @@
     .targets td:first-child { color: var(--sub); font-family: inherit; }
     .targets td:not(:first-child) { text-align: right; }
 
+    /* Period bar */
+    .period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .period-nav { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+    .period-nav button { width: 32px; height: 30px; border-radius: 999px; color: var(--sub); font-size: 15px; }
+    .period-nav button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+    .period-nav button:disabled { opacity: .3; cursor: default; }
+    .period-nav .p-label { font-family: var(--mono); font-size: .84rem; font-weight: 600; padding: 0 6px; white-space: nowrap; cursor: pointer; border-radius: 999px; }
+    .period-nav .p-label small { color: var(--accent); font-family: inherit; margin-left: 4px; font-weight: 700; }
+
     /* Journal */
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
     .toolbar .grow { flex: 1; min-width: 140px; }
@@ -284,7 +293,7 @@
     <section class="view" id="view-dash" hidden>
       <div id="guardDash"></div>
       <div class="toolbar">
-        <div class="chips" id="dashPeriod"></div>
+        <div class="period-bar" id="dashPeriod"></div>
         <div class="chips" id="dashSymbol"></div>
       </div>
       <div class="kpis" id="kpis"></div>
@@ -301,9 +310,9 @@
 
     <!-- ===== 매매일지 ===== -->
     <section class="view" id="view-journal" hidden>
+      <div class="toolbar"><div class="period-bar" id="jPeriod"></div></div>
       <div class="toolbar">
         <input type="search" class="grow" id="jSearch" placeholder="메모·셋업 검색">
-        <select id="jPeriod" style="width:auto"></select>
         <select id="jSymbol" style="width:auto"></select>
         <select id="jStatus" style="width:auto">
           <option value="all">전체 상태</option><option value="open">진행중</option><option value="closed">청산</option>
@@ -640,7 +649,45 @@
     if (p === '90d') return d >= new Date(sod.getTime() - 89 * 864e5);
     return true;
   }
-  const PERIODS = [['all', '전체'], ['today', '오늘'], ['week', '이번 주'], ['month', '이번 달'], ['30d', '30일'], ['90d', '90일']];
+  /* ---------- 기간 (일·주·월·년 + 이전/다음 이동) ---------- */
+  const UNITS = [['all', '전체'], ['day', '일'], ['week', '주'], ['month', '월'], ['year', '년']];
+  const PER = { unit: 'all', off: 0 };
+  try { Object.assign(PER, JSON.parse(localStorage.getItem('tradedesk.period')) || {}, { off: 0 }); } catch (e) {}
+  const savePer = () => { try { localStorage.setItem('tradedesk.period', JSON.stringify({ unit: PER.unit })); } catch (e) {} };
+  const weekStart = d => { const w = new Date(d.getFullYear(), d.getMonth(), d.getDate()); w.setDate(w.getDate() - ((w.getDay() + 6) % 7)); return w; };
+
+  // 선택한 단위·이동 칸수에 해당하는 [시작, 끝) 구간. 주는 월요일 시작.
+  function periodRange(unit, off) {
+    const now = new Date();
+    if (unit === 'day') { const a = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off); return [a, new Date(a.getFullYear(), a.getMonth(), a.getDate() + 1)]; }
+    if (unit === 'week') { const a = weekStart(now); a.setDate(a.getDate() + off * 7); const b = new Date(a); b.setDate(b.getDate() + 7); return [a, b]; }
+    if (unit === 'month') return [new Date(now.getFullYear(), now.getMonth() + off, 1), new Date(now.getFullYear(), now.getMonth() + off + 1, 1)];
+    if (unit === 'year') return [new Date(now.getFullYear() + off, 0, 1), new Date(now.getFullYear() + off + 1, 0, 1)];
+    return null;
+  }
+  function periodLabel(unit, off) {
+    const r = periodRange(unit, off); if (!r) return '전체 기간';
+    const [a, b] = r, md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+    if (unit === 'day') return `${ymd(a)} (${WEEKDAYS[a.getDay()]})`;
+    if (unit === 'week') { const e = new Date(b - 864e5); return `${a.getFullYear()} ${md(a)} ~ ${md(e)}`; }
+    if (unit === 'month') return `${a.getFullYear()}년 ${a.getMonth() + 1}월`;
+    return `${a.getFullYear()}년`;
+  }
+  const NOW_WORD = { day: '오늘', week: '이번 주', month: '이번 달', year: '올해' };
+  function inPER(t) {
+    const r = periodRange(PER.unit, PER.off); if (!r) return true;
+    const d = new Date(tradeTime(t)); return d >= r[0] && d < r[1];
+  }
+  function periodBarHTML() {
+    const units = UNITS.map(([v, l]) => `<button class="chip ${PER.unit === v ? 'on' : ''}" data-action="per-unit" data-v="${v}">${l}</button>`).join('');
+    if (PER.unit === 'all') return `<div class="chips">${units}</div>`;
+    return `<div class="chips">${units}</div>
+      <div class="period-nav">
+        <button data-action="per-move" data-v="-1" aria-label="이전">◀</button>
+        <span class="p-label" data-action="per-now" title="현재로 돌아가기">${periodLabel(PER.unit, PER.off)}${PER.off === 0 ? `<small>${NOW_WORD[PER.unit]}</small>` : ''}</span>
+        <button data-action="per-move" data-v="1" aria-label="다음" ${PER.off >= 0 ? 'disabled' : ''}>▶</button>
+      </div>`;
+  }
 
   function stats(list) {
     const c = list.filter(t => pl(t) != null).sort((a, b) => new Date(tradeTime(a)) - new Date(tradeTime(b)));
@@ -720,11 +767,13 @@
   /* =========================================================
      대시보드
      ========================================================= */
-  const dash = { period: 'all', symbol: 'all', dim: 'setup' };
+  const dash = { symbol: 'all', dim: 'setup' };
   const DIMS = [
     ['setup', '셋업'], ['symbol', '종목'], ['tf', '시간봉'], ['dir', '방향'], ['hour', '시간대'],
     ['weekday', '요일'], ['checklist', '체크리스트'], ['emotion', '감정'], ['mistake', '실수'],
+    ['byDay', '일별'], ['byWeek', '주별'], ['byMonth', '월별'], ['byYear', '연별'],
   ];
+  const DATE_DIMS = ['byDay', 'byWeek', 'byMonth', 'byYear'];
 
   function dimKeys(t, dim) {
     const d = new Date(t.openTime);
@@ -739,16 +788,23 @@
       case 'emotion': return [t.emotion || '(미기록)'];
       case 'mistake': return (t.mistakes && t.mistakes.length) ? t.mistakes : ['실수 없음'];
     }
+    const c = new Date(tradeTime(t));
+    switch (dim) {
+      case 'byDay': return [`${ymd(c)} (${WEEKDAYS[c.getDay()]})`];
+      case 'byWeek': { const w = weekStart(c); return [`${ymd(w)} 주`]; }
+      case 'byMonth': return [`${c.getFullYear()}-${pad(c.getMonth() + 1)}`];
+      case 'byYear': return [`${c.getFullYear()}년`];
+    }
     return ['-'];
   }
 
   function renderDash() {
     $('#guardDash').innerHTML = guardHTML();
-    $('#dashPeriod').innerHTML = PERIODS.map(([v, l]) => `<button class="chip ${dash.period === v ? 'on' : ''}" data-action="dash-period" data-v="${v}">${l}</button>`).join('');
+    $('#dashPeriod').innerHTML = periodBarHTML();
     $('#dashSymbol').innerHTML = [['all', '전 종목'], ...S.settings.symbols.map(s => [s.name, s.label || s.name])]
       .map(([v, l]) => `<button class="chip ${dash.symbol === v ? 'on' : ''}" data-action="dash-symbol" data-v="${esc(v)}">${esc(l)}</button>`).join('');
 
-    const list = S.trades.filter(t => t.status === 'closed' && inPeriod(t, dash.period) && (dash.symbol === 'all' || t.symbol === dash.symbol));
+    const list = S.trades.filter(t => t.status === 'closed' && inPER(t) && (dash.symbol === 'all' || t.symbol === dash.symbol));
     const s = stats(list);
     const start = num(S.settings.startBalance) || 0;
     const payoff = (s.avgWin != null && s.avgLoss) ? s.avgWin / -s.avgLoss : null;
@@ -783,6 +839,7 @@
     if (dash.dim === 'hour') rows.sort((a, b) => a.key.localeCompare(b.key));
     else if (dash.dim === 'weekday') rows.sort((a, b) => ((WEEKDAYS.indexOf(a.key) + 6) % 7) - ((WEEKDAYS.indexOf(b.key) + 6) % 7));
     else if (dash.dim === 'tf') rows.sort((a, b) => TF_ALL.indexOf(a.key) - TF_ALL.indexOf(b.key));
+    else if (DATE_DIMS.includes(dash.dim)) rows.sort((a, b) => b.key.localeCompare(a.key));
     else rows.sort((a, b) => b.n - a.n);
     if (!rows.length) { $('#bdTable').innerHTML = '<div class="empty">청산된 매매가 쌓이면 여기에 분석이 표시됩니다.</div>'; return; }
     const maxAbs = Math.max(...rows.map(r => Math.abs(r.total)), 1);
@@ -844,19 +901,19 @@
      매매일지
      ========================================================= */
   function fillJournalFilters() {
-    const p = $('#jPeriod'), sy = $('#jSymbol');
-    const pv = p.value || 'all', sv = sy.value || 'all';
-    p.innerHTML = PERIODS.map(([v, l]) => `<option value="${v}">${l === '전체' ? '전체 기간' : l}</option>`).join('');
+    const sy = $('#jSymbol');
+    const sv = sy.value || 'all';
+    $('#jPeriod').innerHTML = periodBarHTML();
     sy.innerHTML = `<option value="all">전 종목</option>` + S.settings.symbols.map(s => `<option value="${esc(s.name)}">${esc(s.label || s.name)}</option>`).join('');
-    p.value = pv; sy.value = [...sy.options].some(o => o.value === sv) ? sv : 'all';
+    sy.value = [...sy.options].some(o => o.value === sv) ? sv : 'all';
   }
 
   function renderJournal() {
     fillJournalFilters();
     const q = $('#jSearch').value.trim().toLowerCase();
-    const per = $('#jPeriod').value, sy = $('#jSymbol').value, st = $('#jStatus').value;
+    const sy = $('#jSymbol').value, st = $('#jStatus').value;
     const list = S.trades.filter(t =>
-      inPeriod(t, per) && (sy === 'all' || t.symbol === sy) && (st === 'all' || t.status === st) &&
+      inPER(t) && (sy === 'all' || t.symbol === sy) && (st === 'all' || t.status === st) &&
       (!q || [t.notes, t.setup, t.symbol, t.emotion, ...(t.mistakes || [])].join(' ').toLowerCase().includes(q))
     ).sort((a, b) => new Date(tradeTime(b)) - new Date(tradeTime(a)));
 
@@ -1303,7 +1360,9 @@
     const el = e.target.closest('[data-action]'); if (!el) return;
     const a = el.dataset.action;
     switch (a) {
-      case 'dash-period': dash.period = el.dataset.v; renderDash(); break;
+      case 'per-unit': PER.unit = el.dataset.v; PER.off = 0; savePer(); renderTab(); break;
+      case 'per-move': PER.off = Math.min(0, PER.off + +el.dataset.v); renderTab(); break;
+      case 'per-now': PER.off = 0; renderTab(); break;
       case 'dash-symbol': dash.symbol = el.dataset.v; renderDash(); break;
       case 'dash-dim': dash.dim = el.dataset.v; renderDash(); break;
       case 'new-trade': openForm(null); break;
@@ -1373,7 +1432,7 @@
   });
 
   // 일지 필터
-  ['#jSearch', '#jPeriod', '#jSymbol', '#jStatus'].forEach(s => $(s).addEventListener('input', renderJournal));
+  ['#jSearch', '#jSymbol', '#jStatus'].forEach(s => $(s).addEventListener('input', renderJournal));
 
   // 계산기
   const calcMap = { cBal: 'bal', cRisk: 'risk', cEntry: 'entry', cSL: 'sl', cTP: 'tp', cDist: 'dist', cTPDist: 'tpDist' };

@@ -16,3 +16,6 @@ AWS.txt
 .env.*
 *.secret
 *credentials*
+
+# 개인 교육 자료 기반 파일 (공개 저장소에 올리지 않음)
+private/

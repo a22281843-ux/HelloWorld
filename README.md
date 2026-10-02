@@ -24,6 +24,7 @@
 - **리스크 계산기**: 잔고 대비 위험(%·$)과 손절폭으로 권장 랏 계산, R 목표가, 진입 전 체크리스트 → 일지로 바로 기록
 - **일일 규칙 경고**: 일일 손실 한도, 하루 최대 거래 횟수, 연속 손실 시 매매 중단 표시
 - **MT5 연동(반자동)**: `mt5/TradeDeskExport.mq5` EA가 거래내역을 `MQL5\Files\TradeDesk_history.csv`로 자동 저장 → Trade Desk의 "MT5 동기화" 버튼으로 일지에 반영 (주문 기능 없음, 읽기 전용)
+- **백테스트**: MT5 전략테스터 결과(`TradeDesk_backtest.csv`) 가져오기·저장·비교, 같은 셋업의 실전 매매와 R 기준 비교
 - **데이터**: 브라우저(localStorage)에 저장. 기기 간 이동은 설정 → JSON 백업/합치기, CSV(엑셀) 내보내기
 
 > ⚠️ 설정 → 종목 사양의 "1.0 변동 시 1랏 손익", 최소 랏, 랏 단위는 반드시 인피녹스 MT5 종목 사양과 맞춰 주세요.
@@ -37,6 +38,7 @@ HELLO/
 ├── hello.html       # 메인 웹 애플리케이션 (HTML, CSS, JS 일체형)
 ├── trading.html     # TRADE DESK: 매매일지 · 리스크 계산기 · 통계
 ├── mt5/TradeDeskExport.mq5  # MT5 거래내역 자동 내보내기 EA
+├── mt5/ExportM1Bars.mq5     # 1분봉 CSV 내보내기 스크립트 (빠른 검증용)
 ├── README.md        # 프로젝트 설명 및 배포 가이드
 ├── GEMINI.md        # 프로젝트 규칙 및 설정
 └── .gitignore       # Git 제외 항목 설정

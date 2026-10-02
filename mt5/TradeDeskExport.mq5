@@ -1,16 +1,17 @@
-//+------------------------------------------------------------------+
+﻿//+------------------------------------------------------------------+
 //|                                            TradeDeskExport.mq5   |
 //|  Trade Desk 매매일지용 거래내역 자동 내보내기 EA                 |
 //|  - 주문을 넣거나 수정하지 않습니다 (읽기 전용)                   |
 //|  - 포지션 단위로 묶어서 MQL5\Files\TradeDesk_history.csv 에 저장 |
 //+------------------------------------------------------------------+
 #property copyright "Trade Desk"
-#property version   "1.04"
+#property version   "1.05"
 #property description "Trade Desk 매매일지용 거래내역 자동 내보내기 (읽기 전용, 주문 안 함)"
 
 input int    InpDays     = 0;                       // 내보낼 기간(일), 0 = 전체 (잔고 계산을 위해 전체 권장)
 input string InpFileName = "TradeDesk_history.csv"; // 저장 파일 이름 (MQL5\Files)
 input int    InpTimerSec = 10;                      // 변경 확인 간격(초)
+input bool   InpServerDST = true;                   // 서버가 미국 서머타임을 따름 (여름 +1시간)
 
 struct PosRow
   {
@@ -114,12 +115,51 @@ int AddRow(const long id)
    return(n);
   }
 
-// 서버 시간을 PC 현지 시간 문자열(YYYY-MM-DDTHH:MM)로 변환
+// 미국 서머타임 기간 (3월 둘째 일요일 ~ 11월 첫째 일요일)
+datetime NthSunday(const int year, const int mon, const int nth)
+  {
+   MqlDateTime d;
+   ZeroMemory(d);
+   d.year = year;
+   d.mon  = mon;
+   d.day  = 1;
+   datetime first = StructToTime(d);
+   TimeToStruct(first, d);
+   int day = 1 + (7 - d.day_of_week) % 7 + 7 * (nth - 1);
+   d.day = day;
+   d.hour = 0;
+   d.min = 0;
+   d.sec = 0;
+   return(StructToTime(d));
+  }
+
+bool IsUSDST(const datetime t)
+  {
+   MqlDateTime d;
+   TimeToStruct(t, d);
+   datetime a = NthSunday(d.year, 3, 2) + 2 * 3600;
+   datetime b = NthSunday(d.year, 11, 1) + 2 * 3600;
+   return(t >= a && t < b);
+  }
+
+int g_serverBaseGMT = 2; // 서머타임이 아닐 때의 서버 시간대
+int g_localGMT      = 9; // PC 시간대 (한국 9)
+
+void UpdateTimeZones()
+  {
+   g_localGMT = (int)MathRound((TimeLocal() - TimeGMT()) / 3600.0);
+   int serverNow = (int)MathRound((TimeTradeServer() - TimeGMT()) / 3600.0);
+   g_serverBaseGMT = serverNow - ((InpServerDST && IsUSDST(TimeTradeServer())) ? 1 : 0);
+  }
+
+// 서버 시간을 PC 현지 시간(한국 시간) 문자열(YYYY-MM-DDTHH:MM)로 변환.
+// 거래 시점마다 서머타임 여부를 따져서, 여름(+6)·겨울(+7) 거래 모두 맞게 바꿈
 string LocalTimeStr(const datetime server_time, const int offset)
   {
    if(server_time <= 0)
       return("");
-   string s = TimeToString(server_time - offset, TIME_DATE | TIME_MINUTES);
+   int serverGMT = g_serverBaseGMT + ((InpServerDST && IsUSDST(server_time)) ? 1 : 0);
+   string s = TimeToString(server_time + (g_localGMT - serverGMT) * 3600, TIME_DATE | TIME_MINUTES);
    StringReplace(s, ".", "-");
    StringReplace(s, " ", "T");
    return(s);
@@ -262,8 +302,8 @@ void Export()
      }
 
    // 서버 시간 - PC 시간 차이 (15분 단위로 반올림)
-   int offset = (int)(TimeTradeServer() - TimeLocal());
-   offset = (int)MathRound(offset / 900.0) * 900;
+   UpdateTimeZones();
+   int offset = 0; // (예전 방식의 고정 차이 — 더 이상 사용하지 않음)
 
    string tmp = InpFileName + ".tmp";
    int h = FileOpen(tmp, FILE_WRITE | FILE_TXT | FILE_ANSI, ',', CP_UTF8);
@@ -327,7 +367,7 @@ void Export()
      }
    // 현재 계좌 잔고 (Trade Desk가 대조용으로 사용): status=ACCOUNT, net=잔고
    FileWriteString(h, "0,,ACCOUNT,," + LocalTimeStr(TimeTradeServer(), offset) + ",,,,,,,,,," +
-                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + ",ACCOUNT,0,EA v1.04," + ccy + "\r\n");
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + ",ACCOUNT,0,EA v1.05," + ccy + "\r\n");
    FileClose(h);
 
    // 다 쓴 뒤 한 번에 교체해서, 읽는 도중 반쯤 쓰인 파일이 보이지 않게 함

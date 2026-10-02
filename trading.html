@@ -74,7 +74,7 @@
 
     nav.tabs {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-      display: grid; grid-template-columns: repeat(4, 1fr);
+      display: grid; grid-template-columns: repeat(5, 1fr);
       background: rgba(9,10,15,.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
       border-top: 1px solid var(--border);
       padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
@@ -90,7 +90,7 @@
       body { padding-bottom: 24px; }
       nav.tabs {
         position: sticky; top: env(safe-area-inset-top, 0px); bottom: auto; border-top: none; border-bottom: 1px solid var(--border);
-        grid-template-columns: repeat(4, max-content); gap: 6px; padding: 8px max(16px, calc(50% - 524px)); margin-bottom: 4px;
+        grid-template-columns: repeat(5, max-content); gap: 6px; padding: 8px max(16px, calc(50% - 524px)); margin-bottom: 4px;
       }
       nav.tabs button { flex-direction: row; gap: 8px; font-size: .9rem; padding: 8px 14px; }
       nav.tabs button svg { width: 18px; height: 18px; }
@@ -200,6 +200,26 @@
     .cash-sum .total { border-top: 1px solid var(--border); padding-top: 6px; font-weight: 800; color: var(--text); }
     .cash-list { max-height: 260px; overflow-y: auto; }
 
+    /* Backtest */
+    .bt-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+    .bt-row + .bt-row { margin-top: 6px; }
+    .bt-row.sel { border-color: rgba(129,140,248,.6); background: var(--accent-bg); }
+    .bt-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+    .bt-row .bt-name { font-weight: 700; font-size: .9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bt-row .bt-meta { grid-column: 2 / -1; font-size: .76rem; color: var(--sub); font-family: var(--mono); }
+    .bt-row .bt-acts { display: flex; gap: 4px; align-items: center; }
+    @media (max-width: 560px) {
+      .bt-row { grid-template-columns: auto 1fr; }
+      .bt-row .bt-name { white-space: normal; }
+      .bt-row .bt-acts { grid-column: 2 / -1; order: 3; }
+    }
+    .tool-frame { width: 100%; height: 78vh; min-height: 520px; border: 1px solid var(--border); border-radius: 12px; background: #101514; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--sub); margin-top: 8px; }
+    .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+    table.cmp td:first-child { color: var(--sub); font-family: inherit; font-weight: 600; }
+    table.cmp th { text-align: right; }
+    table.cmp th small { display: block; font-weight: 500; color: var(--muted); }
+
     /* Period bar */
     .period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .period-nav { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
@@ -292,6 +312,7 @@
     <button data-tab="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>대시보드</button>
     <button data-tab="journal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 9h8M8 13h6"/></svg>매매일지</button>
     <button data-tab="calc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>계산기</button>
+    <button data-tab="bt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21.5h11.6a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7 15h10"/></svg>백테스트</button>
     <button data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>설정</button>
   </nav>
 
@@ -405,6 +426,62 @@
             </div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== 백테스트 ===== -->
+    <section class="view" id="view-bt" hidden>
+      <div class="card">
+        <h2>백테스트 결과 가져오기</h2>
+        <div class="btn-row">
+          <button class="btn primary" data-action="bt-import">⬆ MT5 전략테스터 결과 열기</button>
+          <button class="btn" data-action="bt-tool">⚡ 빠른 검증 (1분봉) 열기</button>
+        </div>
+        <input type="file" id="btFile" accept=".csv,text/csv" hidden>
+        <input type="file" id="toolFile" accept=".html,text/html" hidden>
+        <details class="help">
+          <summary>MT5 전략테스터로 정밀 검증하는 법 (추천)</summary>
+          <ul>
+            <li>MT5 <b>보기 → 전략 테스터</b>(Ctrl+R) 열기 → Expert에서 <b>DoubleB_GCDC_Tester</b> 선택</li>
+            <li>종목(XAUUSD 등)·기간 선택, <b>모델링: "실제 틱 기반의 모든 틱"</b>, 시간 프레임은 M1</li>
+            <li><b>입력</b> 탭에서 진입 시간봉(M5/M10)·손절·익절(pt)·랏 설정 → <b>시작</b></li>
+            <li>끝나면 <b>저널</b> 탭에 "거래 N건을 … 저장했습니다"와 파일 위치가 나옵니다</li>
+            <li>여기서 <b>MT5 전략테스터 결과 열기</b> → <code>…\MetaQuotes\Terminal\Common\Files\TradeDesk_backtest.csv</code> 선택 (파일을 이 화면에 끌어다 놓아도 됩니다)</li>
+          </ul>
+          <p>실제 틱 순서로 손절·익절 중 먼저 닿은 쪽을 정확히 판정하고, 실제 스프레드·수수료가 반영됩니다. 설정을 바꿔 여러 번 돌리면 결과가 아래에 쌓이고 서로 비교할 수 있어요. 시간은 모두 한국 시간입니다.</p>
+        </details>
+        <details class="help">
+          <summary>빠른 검증 (1분봉 CSV)은 언제 쓰나요?</summary>
+          <p>손절·익절 값을 바꿔 가며 몇 초 만에 대략 비교할 때 씁니다. 한 1분봉 안에서 손절·익절이 둘 다 닿으면 손절로 가정하므로, 최종 판단은 전략테스터 결과로 하세요.
+          1분봉 CSV는 MT5에서 <b>ExportM1Bars</b> 스크립트를 차트에 끌어다 놓으면 <code>MQL5\Files</code>에 만들어집니다. 결과 화면의 <b>⇪ Trade Desk에 저장</b>을 누르면 아래 목록에 저장됩니다.</p>
+        </details>
+      </div>
+
+      <div class="card" id="toolCard" hidden>
+        <h2><span>빠른 검증 (1분봉)</span><button class="btn sm" data-action="bt-tool-close">닫기</button></h2>
+        <div id="toolBox"></div>
+      </div>
+
+      <div class="card">
+        <h2>저장된 백테스트 <span class="hint">체크해서 비교 (최대 4개)</span></h2>
+        <div id="btList"></div>
+      </div>
+
+      <div class="card" id="btCmpCard">
+        <h2><span>비교 · 실전과 함께</span></h2>
+        <div class="row" style="margin-bottom:12px">
+          <div class="field"><label for="btSetup">실전 매매 셋업</label><select id="btSetup"></select></div>
+          <div class="field"><label for="btRealPeriod">실전 기간</label><select id="btRealPeriod"><option value="same">백테스트와 같은 기간</option><option value="all">전체 기간</option></select></div>
+        </div>
+        <div class="tbl-scroll" id="btCmp"></div>
+        <div class="chart-wrap" style="margin-top:14px"><canvas id="btChart"></canvas></div>
+        <div class="legend" id="btLegend"></div>
+        <div class="sub" style="font-size:.76rem;margin-top:8px">백테스트는 포인트, 실전은 달러라서 단위가 다릅니다. 그래서 <b>R</b>(1R = 손절 한 번 크기)로 맞춰 비교해요. 실전 R은 일지에 손절가가 적혀 있어야 계산됩니다.</div>
+      </div>
+
+      <div class="card" id="btDetailCard" hidden>
+        <h2><span id="btDetailTitle">거래 내역</span><button class="btn sm" data-action="bt-detail-close">닫기</button></h2>
+        <div class="tbl-scroll" id="btDetail" style="max-height:420px;overflow-y:auto"></div>
       </div>
     </section>
 
@@ -535,7 +612,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.6';
+  const APP_VERSION = 'v1.7';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -634,11 +711,11 @@
       const d = JSON.parse(localStorage.getItem(KEY));
       if (d && d.settings) return fromData(d);
     } catch (e) { /* 손상된 데이터 → 기본값 */ }
-    return { settings: clone(DEFAULTS), trades: [], cash: [] };
+    return { settings: clone(DEFAULTS), trades: [], cash: [], bt: [] };
   }
   // 저장된 데이터(또는 백업)를 현재 형식으로 맞춤
   function fromData(d) {
-    const out = { settings: { ...clone(DEFAULTS), ...(d.settings || {}) }, trades: Array.isArray(d.trades) ? d.trades : [], cash: Array.isArray(d.cash) ? d.cash : null };
+    const out = { settings: { ...clone(DEFAULTS), ...(d.settings || {}) }, trades: Array.isArray(d.trades) ? d.trades : [], cash: Array.isArray(d.cash) ? d.cash : null, bt: Array.isArray(d.bt) ? d.bt : [] };
     if (!out.cash) {
       // 예전 버전: "시작 잔고" 설정을 첫 입금 기록으로 옮김 (새로 시작한 경우는 제외)
       out.cash = [];
@@ -1466,7 +1543,7 @@
     const images = {};
     S.trades.forEach(t => { const im = getImgs(t.id); if (im.length) images[t.id] = im; });
     const stamp = toLocalInput(new Date()).replace(/[-:T]/g, '').slice(0, 12);
-    const text = JSON.stringify({ app: 'tradedesk', version: 1, exportedAt: new Date().toISOString(), settings: S.settings, trades: S.trades, cash: S.cash, images });
+    const text = JSON.stringify({ app: 'tradedesk', version: 1, exportedAt: new Date().toISOString(), settings: S.settings, trades: S.trades, cash: S.cash, bt: S.bt, images });
     dialog('백업 내보내기', `<p>매매 ${S.trades.length}건 · ${(text.length / 1024).toFixed(0)}KB\n파일 저장이 안 되는 환경(앱 미리보기 등)에서는 <b>복사</b> 후 메모앱·카톡 나에게 보내기 등에 붙여넣어 옮기세요.</p>
       <textarea id="bkText" readonly>${esc(text)}</textarea>`, [
       { label: '닫기', value: null },
@@ -1520,6 +1597,7 @@
           if (ids.has(t.id)) { S.trades[S.trades.findIndex(x => x.id === t.id)] = t; updated++; }
           else { S.trades.push(t); added++; }
         }
+        for (const r of (Array.isArray(d.bt) ? d.bt : [])) if (!S.bt.some(x => x.id === r.id)) S.bt.push(r);
         for (const c of (Array.isArray(d.cash) ? d.cash : [])) {
           const i = S.cash.findIndex(x => x.id === c.id);
           if (i >= 0) S.cash[i] = c; else S.cash.push(c);
@@ -1641,7 +1719,10 @@
   function mt5Sync() { $('#mt5File').click(); }
 
   async function importMT5File(f) {
-    try { importMT5(await f.text()); } catch (err) { toast('⚠ ' + err.message, 4000); }
+    try {
+      const text = await f.text();
+      if (isBacktestCSV(text)) importBacktest(text); else importMT5(text);
+    } catch (err) { toast('⚠ ' + err.message, 4000); }
   }
 
   // TradeDesk_history.csv를 페이지 아무 곳에나 끌어다 놓으면 동기화
@@ -1733,9 +1814,255 @@
   }
 
   /* =========================================================
+     백테스트 (MT5 전략테스터 결과 · 빠른 검증) 저장·비교
+     ========================================================= */
+  const EMBEDDED_TOOL = '';   // 빠른 검증 도구 HTML (개인용 빌드에서만 채워짐)
+  const TOOL_KEY = 'tradedesk.tool';
+  const GCDC_SETUP = '더블비 GCDC 첫터치';
+  const BT_COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f472b6'];
+  const REASON_KO = { SL: '손절', TP: '익절', END: '기간 종료' };
+  const bt = { sel: [], detail: null, setupPicked: false };
+
+  const isBacktestCSV = text => /^\uFEFF?#meta,app=tradedesk-backtest/.test(text);
+
+  function parseBacktest(text) {
+    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+    const meta = {};
+    lines[0].split(',').slice(1).forEach(kv => { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i)] = kv.slice(i + 1); });
+    const head = (lines[1] || '').split(',');
+    if (!head.includes('entry_time')) throw new Error('백테스트 결과 형식이 아닙니다');
+    const trades = lines.slice(2).map(l => {
+      const c = l.split(','), o = {}; head.forEach((h, i) => o[h] = (c[i] ?? '').trim());
+      return {
+        dir: o.dir === 'SELL' ? -1 : 1, entryTime: o.entry_time, exitTime: o.exit_time,
+        entry: num(o.entry_price), exit: num(o.exit_price), lots: num(o.lots),
+        points: num(o.points), profit: num(o.profit), reason: o.reason || 'END', crossTime: o.cross_time,
+      };
+    }).filter(t => t.entryTime && t.points != null);
+    return { meta, trades };
+  }
+
+  function runName(r) {
+    return `${r.symbol} ${r.tf} · SL ${+r.sl} / TP ${+r.tp} · ${(r.from || '').slice(0, 10)} ~ ${(r.to || '').slice(0, 10)}`;
+  }
+
+  function addRun(run) {
+    run.id = run.id || uid();
+    run.createdAt = new Date().toISOString();
+    run.name = run.name || runName(run);
+    S.bt.push(run);
+    // 실전 비교용 셋업 이름을 목록에 추가
+    if (run.strategy === 'GCDC_FirstTouch' && !S.settings.setups.includes(GCDC_SETUP)) S.settings.setups.push(GCDC_SETUP);
+    if (bt.sel.length < 4) bt.sel.push(run.id);
+    save();
+  }
+
+  function importBacktest(text) {
+    const { meta, trades } = parseBacktest(text);
+    if (!trades.length) { toast('결과 파일에 거래가 없습니다. 기간이나 설정을 확인하세요', 3500); return; }
+    addRun({
+      source: meta.source || 'tester', strategy: meta.strategy || '', symbol: meta.symbol || '', tf: meta.tf || '',
+      sl: num(meta.sl), tp: num(meta.tp), point: num(meta.point), lots: num(meta.lots), currency: meta.currency || 'USD',
+      from: meta.from || trades[0].entryTime, to: meta.to || trades[trades.length - 1].exitTime,
+      stats: { crosses: num(meta.crosses), touches: num(meta.touches), blocked: num(meta.blocked), holding: num(meta.holding), late: num(meta.late), failed: num(meta.failed) },
+      trades,
+    });
+    toast(`전략테스터 결과 ${trades.length}건을 저장했습니다`);
+    setTab('bt');
+  }
+
+  // 빠른 검증 도구(iframe)에서 보낸 결과 저장
+  window.addEventListener('message', e => {
+    const frame = $('#toolFrame');
+    if (!frame || e.source !== frame.contentWindow) return;
+    const d = e.data;
+    if (!d || d.type !== 'tradedesk-backtest-run' || !d.run || !Array.isArray(d.run.trades)) return;
+    const r = d.run;
+    addRun({
+      source: 'quick', strategy: r.strategy || '', symbol: (r.symbol || '') + (r.demo ? ' (예제)' : ''), tf: r.tf, sl: num(r.sl), tp: num(r.tp),
+      point: num(r.point), cost: num(r.cost), from: r.from, to: r.to, stats: r.stats || {},
+      trades: r.trades.map(t => ({ dir: t.dir, entryTime: t.entryTime, exitTime: t.exitTime, entry: num(t.entry), exit: num(t.exit), points: num(t.points), reason: t.reason, crossTime: t.crossTime })),
+    });
+    renderBTList(); renderBTCompare();
+    toast('빠른 검증 결과를 저장했습니다');
+  });
+
+  function monthsBetween(a, b) {
+    const d = (new Date(b) - new Date(a)) / (864e5 * 30.44);
+    return isFinite(d) && d > 0 ? d : null;
+  }
+
+  // 공통 지표 (vals: 거래별 결과, rs: 거래별 R)
+  function seriesStats(vals, rs, months) {
+    const n = vals.length;
+    let gw = 0, gl = 0, w = 0, l = 0, streak = 0, maxStreak = 0, cum = 0, peak = 0, mdd = 0, cumR = 0, peakR = 0, mddR = 0;
+    vals.forEach((v, i) => {
+      cum += v; peak = Math.max(peak, cum); mdd = Math.max(mdd, peak - cum);
+      if (v > 0) { gw += v; w++; streak = 0; } else if (v < 0) { gl -= v; l++; streak++; maxStreak = Math.max(maxStreak, streak); }
+      if (rs[i] != null) { cumR += rs[i]; peakR = Math.max(peakR, cumR); mddR = Math.max(mddR, peakR - cumR); }
+    });
+    const rv = rs.filter(x => x != null);
+    return {
+      n, w, l, total: cum, mdd, maxStreak, mddR: rv.length ? mddR : null,
+      winRate: n ? w / n : null,
+      payoff: (w && l) ? (gw / w) / (gl / l) : null,
+      pf: gl > 0 ? gw / gl : (gw > 0 ? Infinity : null),
+      expR: rv.length ? rv.reduce((a, b) => a + b, 0) / rv.length : null,
+      perMonth: months ? n / months : null,
+    };
+  }
+
+  function runStats(r) {
+    const tr = [...r.trades].sort((a, b) => new Date(a.exitTime) - new Date(b.exitTime));
+    const st = seriesStats(tr.map(t => t.points), tr.map(t => r.sl ? t.points / r.sl : null), monthsBetween(r.from, r.to));
+    st.profit = tr.some(t => t.profit != null) ? tr.reduce((a, t) => a + (t.profit || 0), 0) : null;
+    st.curveR = cumulative(tr.map(t => r.sl ? t.points / r.sl : 0));
+    return st;
+  }
+
+  function realTrades(setup, symbol, from, to) {
+    const sym2 = symbol ? (mapSymbol(symbol.replace(/\s*\(예제\)$/, '')) || symbol) : null;
+    return S.trades.filter(t => t.status === 'closed' && pl(t) != null && t.setup === setup &&
+      (!sym2 || t.symbol === sym2) &&
+      (!from || new Date(t.openTime) >= new Date(from)) && (!to || new Date(t.openTime) <= new Date(to)))
+      .sort((a, b) => new Date(tradeTime(a)) - new Date(tradeTime(b)));
+  }
+
+  function realStats(list, from, to) {
+    const first = list[0], last = list[list.length - 1];
+    const st = seriesStats(list.map(t => pl(t)), list.map(t => rmul(t)),
+      monthsBetween(from || (first && first.openTime), to || (last && tradeTime(last))));
+    st.curveR = cumulative(list.map(t => rmul(t) || 0));
+    return st;
+  }
+
+  const cumulative = arr => { let c = 0; return [0, ...arr.map(v => (c += v))]; };
+
+  function renderBT() {
+    renderBTList();
+    const sel = $('#btSetup'), cur = sel.value;
+    sel.innerHTML = S.settings.setups.map(x => `<option>${esc(x)}</option>`).join('');
+    // 직접 고르기 전에는 더블비 셋업을 기본으로
+    sel.value = (bt.setupPicked && S.settings.setups.includes(cur)) ? cur : (S.settings.setups.includes(GCDC_SETUP) ? GCDC_SETUP : (S.settings.setups.includes(cur) ? cur : S.settings.setups[0] || ''));
+    renderBTCompare();
+    renderBTDetail();
+  }
+
+  function renderBTList() {
+    bt.sel = bt.sel.filter(id => S.bt.some(r => r.id === id));
+    const runs = [...S.bt].reverse();
+    $('#btList').innerHTML = runs.length ? runs.map(r => {
+      const st = runStats(r), on = bt.sel.includes(r.id);
+      return `<div class="bt-row ${on ? 'sel' : ''}">
+        <input type="checkbox" data-action="bt-sel" data-id="${esc(r.id)}" ${on ? 'checked' : ''} aria-label="비교에 넣기">
+        <div class="bt-name" title="${esc(r.name)}">${esc(r.name)}</div>
+        <div class="bt-acts">
+          <span class="tag">${r.source === 'tester' ? '전략테스터' : '빠른 검증'}</span>
+          <button class="btn sm" data-action="bt-view" data-id="${esc(r.id)}">거래</button>
+          <button class="btn sm danger" data-action="bt-del" data-id="${esc(r.id)}">삭제</button>
+        </div>
+        <div class="bt-meta">${st.n}건 · 승률 ${pct(st.winRate, 1)} · PF ${st.pf == null ? '—' : st.pf === Infinity ? '∞' : st.pf.toFixed(2)} · <span class="${cls(st.total)}">${st.total >= 0 ? '+' : ''}${st.total.toFixed(1)}pt</span> · 기대값 <span class="${cls(st.expR)}">${rTxt(st.expR)}</span>${st.profit != null ? ` · <span class="${cls(st.profit)}">${money(st.profit)}</span>` : ''}</div>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:22px">아직 저장된 백테스트가 없습니다.<br>MT5 전략테스터 결과를 열거나, 빠른 검증에서 <b>⇪ Trade Desk에 저장</b>을 누르세요.</div>';
+  }
+
+  function renderBTCompare() {
+    const runs = bt.sel.map(id => S.bt.find(r => r.id === id)).filter(Boolean);
+    const setup = $('#btSetup').value, same = $('#btRealPeriod').value === 'same';
+    // 실전: 첫 번째 선택한 백테스트의 종목·기간 기준
+    const base = runs[0];
+    const from = same && base ? base.from : null, to = same && base ? base.to : null;
+    const real = setup ? realTrades(setup, base ? base.symbol : null, from, to) : [];
+    const rs = realStats(real, from, to);
+    const cols = runs.map((r, i) => ({ label: `${String.fromCharCode(65 + i)} · ${r.source === 'tester' ? '테스터' : '빠른'}`, sub: `${r.symbol} ${r.tf} SL${+r.sl}/TP${+r.tp}`, st: runStats(r), unit: 'pt', color: BT_COLORS[i] }));
+    cols.push({ label: '실전', sub: setup ? `${setup}${base ? ' · ' + (mapSymbol(base.symbol.replace(/\s*\(예제\)$/, '')) || base.symbol) : ''}` : '셋업 없음', st: rs, unit: '$', color: '#e2e8f0', real: true });
+    const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
+    const rows = [
+      ['거래 수', c => `${c.st.n}건`],
+      ['월평균 거래', c => c.st.perMonth == null ? '—' : c.st.perMonth.toFixed(1) + '건'],
+      ['승률', c => pct(c.st.winRate, 1)],
+      ['평균 손익비', c => c.st.payoff == null ? '—' : '1 : ' + c.st.payoff.toFixed(2)],
+      ['Profit Factor', c => f2(c.st.pf)],
+      ['기대값 (R)', c => `<span class="${cls(c.st.expR)}">${rTxt(c.st.expR)}</span>`],
+      ['최대 연속 손실', c => c.st.maxStreak + '회'],
+      ['최대 낙폭 (R)', c => c.st.mddR == null ? '—' : '-' + c.st.mddR.toFixed(2) + 'R'],
+      ['순손익', c => c.real ? `<span class="${cls(c.st.total)}">${money(c.st.total)}</span>` : `<span class="${cls(c.st.total)}">${c.st.total >= 0 ? '+' : ''}${c.st.total.toFixed(1)}pt</span>${c.st.profit != null ? `<br><small class="${cls(c.st.profit)}">${money(c.st.profit)}</small>` : ''}`],
+    ];
+    if (!runs.length && !real.length) {
+      $('#btCmp').innerHTML = '<div class="empty" style="padding:18px">위 목록에서 비교할 백테스트를 체크하세요.</div>';
+    } else {
+      $('#btCmp').innerHTML = `<table class="bd cmp"><thead><tr><th style="text-align:left">항목</th>${cols.map(c => `<th><span style="color:${c.color}">●</span> ${esc(c.label)}<small>${esc(c.sub)}</small></th>`).join('')}</tr></thead>
+        <tbody>${rows.map(([k, f]) => `<tr><td>${k}</td>${cols.map(c => `<td>${f(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        ${setup && !real.length ? `<div class="sub" style="font-size:.78rem;margin-top:8px">실전 기록 없음: 일지에서 셋업을 <b>${esc(setup)}</b>(으)로 적은 청산 매매가 ${same && base ? '이 기간에 ' : ''}없습니다.</div>` : ''}`;
+    }
+    $('#btLegend').innerHTML = cols.filter(c => c.st.n).map(c => `<span><i style="background:${c.color}"></i>${esc(c.label)} (누적 R)</span>`).join('');
+    requestAnimationFrame(() => drawMulti($('#btChart'), cols.filter(c => c.st.n).map(c => ({ color: c.color, vals: c.st.curveR, dash: !!c.real }))));
+  }
+
+  function drawMulti(cv, series) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '11px JetBrains Mono, monospace';
+    if (!series.length) { ctx.fillStyle = '#64748b'; ctx.textAlign = 'center'; ctx.fillText('비교할 결과를 선택하세요', w / 2, h / 2); return; }
+    const all = series.flatMap(s => s.vals);
+    let min = Math.min(0, ...all), max = Math.max(0, ...all);
+    if (max === min) { max += 1; min -= 1; }
+    const padT = 12, padB = 18, padL = 8, padR = 56;
+    const maxN = Math.max(...series.map(s => s.vals.length - 1), 1);
+    const X = i => padL + (w - padL - padR) * (i / maxN);
+    const Y = v => padT + (h - padT - padB) * (1 - (v - min) / (max - min));
+    ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w - padR, Y(0)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#64748b'; ctx.textAlign = 'left';
+    [max, 0, min].forEach(v => ctx.fillText((v > 0 ? '+' : '') + v.toFixed(1) + 'R', w - padR + 6, Math.min(h - 4, Math.max(10, Y(v) + 4))));
+    ctx.textAlign = 'center'; ctx.fillText('거래 순서 →', (w - padR) / 2, h - 3);
+    for (const s of series) {
+      ctx.beginPath(); s.vals.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+      ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.setLineDash(s.dash ? [5, 4] : []); ctx.lineJoin = 'round'; ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  function renderBTDetail() {
+    const r = bt.detail && S.bt.find(x => x.id === bt.detail);
+    $('#btDetailCard').hidden = !r;
+    if (!r) return;
+    $('#btDetailTitle').textContent = '거래 내역 · ' + r.name;
+    const dg = Math.max(2, ...r.trades.slice(0, 20).map(t => priceDigits(t.entry)));
+    const tm = s => (s || '').replace('T', ' ').slice(2);
+    $('#btDetail').innerHTML = `<table class="bd"><thead><tr><th>#</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>pt</th>${r.trades.some(t => t.profit != null) ? '<th>손익</th>' : ''}</tr></thead><tbody>${
+      r.trades.map((t, i) => `<tr><td>${i + 1}</td><td>${tm(t.entryTime)}</td><td>${tm(t.exitTime)}</td><td><span class="badge ${t.dir === -1 ? 'S' : 'L'}">${t.dir === -1 ? '매도' : '매수'}</span></td>
+        <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_KO[t.reason] || esc(t.reason)}</td><td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td>${t.profit != null ? `<td class="${cls(t.profit)}">${money(t.profit)}</td>` : (r.trades.some(x => x.profit != null) ? '<td></td>' : '')}</tr>`).join('')
+    }</tbody></table>`;
+  }
+
+  function toolHTML() {
+    if (EMBEDDED_TOOL) return EMBEDDED_TOOL;
+    try { return localStorage.getItem(TOOL_KEY) || ''; } catch (e) { return ''; }
+  }
+  function openTool() {
+    const html = toolHTML();
+    $('#toolCard').hidden = false;
+    if (!html) {
+      $('#toolBox').innerHTML = `<div class="alert info">빠른 검증 도구 파일이 연결되어 있지 않습니다. 교육에서 받은 백테스트 HTML 파일을 한 번 연결하면 다음부터 바로 열립니다.</div>
+        <div class="btn-row" style="margin-top:10px"><button class="btn primary" data-action="bt-tool-connect">도구 파일 연결</button></div>`;
+      return;
+    }
+    if (!$('#toolFrame')) {
+      $('#toolBox').innerHTML = '<iframe id="toolFrame" class="tool-frame" title="빠른 검증 도구"></iframe>';
+      $('#toolFrame').srcdoc = html;
+    }
+    $('#toolCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* =========================================================
      라우팅 & 이벤트
      ========================================================= */
-  const TABS = ['dash', 'journal', 'calc', 'settings'];
+  const TABS = ['dash', 'journal', 'calc', 'bt', 'settings'];
   let tab = 'dash';
   function setTab(t) {
     tab = TABS.includes(t) ? t : 'dash';
@@ -1749,6 +2076,7 @@
     if (tab === 'dash') renderDash();
     else if (tab === 'journal') renderJournal();
     else if (tab === 'calc') renderCalcStatic();
+    else if (tab === 'bt') renderBT();
     else if (tab === 'settings') renderSettings();
   }
   function renderAll() { applyColor(); renderBalPill(); renderTab(); }
@@ -1799,6 +2127,19 @@
       case 'export-csv': exportCSV(); break;
       case 'import-open': openImport(); break;
       case 'cash-new': openCashForm(null); break;
+      case 'bt-import': $('#btFile').click(); break;
+      case 'bt-tool': openTool(); break;
+      case 'bt-tool-close': $('#toolCard').hidden = true; break;
+      case 'bt-tool-connect': $('#toolFile').click(); break;
+      case 'bt-view': bt.detail = el.dataset.id; renderBTDetail(); $('#btDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
+      case 'bt-detail-close': bt.detail = null; renderBTDetail(); break;
+      case 'bt-del':
+        ask('이 백테스트 결과를 삭제할까요?', '삭제', true).then(ok => {
+          if (!ok) return;
+          S.bt = S.bt.filter(r => r.id !== el.dataset.id);
+          if (bt.detail === el.dataset.id) bt.detail = null;
+          save(); renderBT();
+        }); break;
       case 'recon-del-cash': case 'recon-show-manual': case 'recon-adjust': reconAction(a); break;
       case 'cash-edit': openCashForm(el.dataset.id); break;
       case 'mt5-sync': mt5Sync(); break;
@@ -1806,7 +2147,7 @@
         ask('모든 매매 기록과 설정을 삭제합니다. 되돌릴 수 없습니다.\n먼저 백업을 내보내셨나요?', '모두 삭제', true).then(ok => {
           if (!ok) return;
           S.trades.forEach(t => setImgs(t.id, []));
-          S = { settings: clone(DEFAULTS), trades: [], cash: [] }; save();
+          S = { settings: clone(DEFAULTS), trades: [], cash: [], bt: [] }; save();
           try { localStorage.removeItem(CALC_KEY); } catch (err) {}
           toast('초기화했습니다'); renderAll();
         }); break;
@@ -1879,6 +2220,29 @@
   });
   $('#curveMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { dash.curve = b.dataset.v; renderDash(); } });
   $('#colorMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.settings.colorMode = b.dataset.v; save(); applyColor(); renderSettings(); } });
+  $('#btList').addEventListener('change', e => {
+    const id = e.target.dataset.id; if (!id || e.target.dataset.action !== 'bt-sel') return;
+    if (e.target.checked) {
+      if (bt.sel.length >= 4) { e.target.checked = false; toast('비교는 최대 4개까지 가능합니다'); return; }
+      bt.sel.push(id);
+    } else bt.sel = bt.sel.filter(x => x !== id);
+    renderBTList(); renderBTCompare();
+  });
+  $('#btSetup').addEventListener('change', () => { bt.setupPicked = true; renderBTCompare(); });
+  $('#btRealPeriod').addEventListener('change', renderBTCompare);
+  $('#btFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try { const text = await f.text(); if (isBacktestCSV(text)) importBacktest(text); else toast('⚠ TradeDesk_backtest.csv (전략테스터 결과) 파일을 선택하세요', 4000); }
+    catch (err) { toast('⚠ ' + err.message, 4000); }
+  });
+  $('#toolFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const html = await f.text();
+    try { localStorage.setItem(TOOL_KEY, html); } catch (err) { toast('⚠ 도구를 저장할 공간이 부족합니다', 4000); return; }
+    $('#toolBox').innerHTML = ''; openTool(); toast('도구를 연결했습니다');
+  });
   $('#mt5File').addEventListener('change', async e => {
     const f = e.target.files[0]; e.target.value = '';
     if (f) importMT5File(f);
@@ -1888,7 +2252,7 @@
     if (f && $('#imText')) { $('#imText').value = await f.text(); toast('파일을 불러왔습니다. 합치기 또는 덮어쓰기를 누르세요'); }
   });
 
-  let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (tab === 'dash') renderDash(); }, 150); });
+  let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (tab === 'dash') renderDash(); if (tab === 'bt') renderBTCompare(); }, 150); });
 
   // 다른 탭/창에서 데이터가 바뀌면 반영
   window.addEventListener('storage', e => { if (e.key === KEY) { S = load(); renderAll(); } });

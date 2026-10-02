@@ -101,6 +101,8 @@
     .card + .card, .stack > * + * { margin-top: 12px; }
     .card h2, .sec-title { font-size: .95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .sec-title .hint { font-size: .78rem; font-weight: 500; color: var(--muted); }
+    .card h2 { flex-wrap: wrap; row-gap: 8px; }
+    #curveMode button { padding: 6px 12px; font-size: .78rem; white-space: nowrap; }
     .grid-2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
     @media (min-width: 860px) { .grid-2 { grid-template-columns: 1fr 1fr; align-items: start; } .grid-2 > .card + .card { margin-top: 0; } }
 
@@ -187,6 +189,16 @@
     .targets td { padding: 7px 4px; border-top: 1px solid var(--border); font-family: var(--mono); }
     .targets td:first-child { color: var(--sub); font-family: inherit; }
     .targets td:not(:first-child) { text-align: right; }
+
+    /* Cash flow (입출금) */
+    .cash-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 14px; border-radius: 12px; border: 1px dashed var(--border-2); background: transparent; cursor: pointer; font-size: .86rem; color: var(--sub); }
+    .cash-row + .cash-row, .trade + .cash-row, .cash-row + .trade { margin-top: 6px; }
+    .cash-row b { font-family: var(--mono); color: var(--text); }
+    .cash-row .c-ico { font-size: .8rem; width: 22px; height: 22px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--panel-2); margin-right: 8px; flex: none; }
+    .cash-sum { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: .88rem; margin-bottom: 12px; }
+    .cash-sum dt { color: var(--sub); } .cash-sum dd { font-family: var(--mono); text-align: right; font-weight: 600; }
+    .cash-sum .total { border-top: 1px solid var(--border); padding-top: 6px; font-weight: 800; color: var(--text); }
+    .cash-list { max-height: 260px; overflow-y: auto; }
 
     /* Period bar */
     .period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -298,7 +310,8 @@
       </div>
       <div class="kpis" id="kpis"></div>
       <div class="card" style="margin-top:12px">
-        <h2>자산 곡선 <span class="hint" id="curveHint"></span></h2>
+        <h2><span>자산 곡선 <span class="hint" id="curveHint"></span></span>
+          <span class="seg" id="curveMode" style="font-size:.8rem"><button data-v="pl">매매 손익</button><button data-v="bal">계좌 잔고</button></span></h2>
         <div class="chart-wrap"><canvas id="equity"></canvas></div>
       </div>
       <div class="card">
@@ -402,8 +415,8 @@
           <div class="card form-gap">
             <h2 style="margin-bottom:0">계좌 & 리스크 규칙</h2>
             <div class="row">
-              <div class="field"><label>시작 잔고 ($)</label><input type="number" inputmode="decimal" class="num-in" data-s="startBalance"></div>
               <div class="field"><label>기본 위험 (%)</label><input type="number" inputmode="decimal" class="num-in" data-s="riskPct" step="0.1"></div>
+              <div></div>
             </div>
             <div class="row three">
               <div class="field"><label>일일 손실 한도 %</label><input type="number" inputmode="decimal" class="num-in" data-s="dailyMaxLossPct" step="0.5"></div>
@@ -414,6 +427,13 @@
               <div class="lbl" style="margin-bottom:5px">손익 색상</div>
               <div class="seg" id="colorMode"><button data-v="global">해외식 (수익 초록)</button><button data-v="kr">한국식 (수익 빨강)</button></div>
             </div>
+          </div>
+
+          <div class="card">
+            <h2>계좌 · 입출금 <button class="btn sm" data-action="cash-new">+ 입금/출금 기록</button></h2>
+            <dl class="cash-sum" id="cashSum"></dl>
+            <div class="cash-list" id="cashList"></div>
+            <div class="sub" style="font-size:.78rem;margin-top:10px">입출금은 잔고에만 반영되고 승률·손익비·기대값 같은 매매 통계에는 들어가지 않습니다. MT5 동기화를 하면 MT5의 입출금도 자동으로 기록됩니다.</div>
           </div>
 
           <div class="card">
@@ -523,7 +543,6 @@
   const WEEKDAYS = ['일','월','화','수','목','금','토'];
 
   const DEFAULTS = {
-    startBalance: 10000,
     riskPct: 1,
     dailyMaxLossPct: 3,
     maxTradesPerDay: 5,
@@ -611,9 +630,24 @@
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY));
-      if (d && d.settings) return { settings: { ...clone(DEFAULTS), ...d.settings }, trades: Array.isArray(d.trades) ? d.trades : [] };
+      if (d && d.settings) return fromData(d);
     } catch (e) { /* 손상된 데이터 → 기본값 */ }
-    return { settings: clone(DEFAULTS), trades: [] };
+    return { settings: clone(DEFAULTS), trades: [], cash: [] };
+  }
+  // 저장된 데이터(또는 백업)를 현재 형식으로 맞춤
+  function fromData(d) {
+    const out = { settings: { ...clone(DEFAULTS), ...(d.settings || {}) }, trades: Array.isArray(d.trades) ? d.trades : [], cash: Array.isArray(d.cash) ? d.cash : null };
+    if (!out.cash) {
+      // 예전 버전: "시작 잔고" 설정을 첫 입금 기록으로 옮김 (새로 시작한 경우는 제외)
+      out.cash = [];
+      const sb = num(d.settings && d.settings.startBalance);
+      if (sb && sb > 0 && (out.trades.length || sb !== 10000)) {
+        const first = out.trades.map(t => t.openTime).filter(Boolean).sort()[0];
+        out.cash.push({ id: uid(), type: 'dep', amount: sb, time: first || toLocalInput(new Date()), memo: '시작 잔고', auto: true });
+      }
+    }
+    delete out.settings.startBalance;
+    return out;
   }
   let S = load();
 
@@ -659,8 +693,29 @@
   }
   const checklistDone = t => t.checkTotal ? (t.checks || []).length >= t.checkTotal : null;
 
-  function currentBalance() {
-    return (num(S.settings.startBalance) || 0) + S.trades.reduce((a, t) => a + (pl(t) || 0), 0);
+  /* ---------- 입출금 ---------- */
+  const cashSigned = c => (c.type === 'wd' ? -1 : 1) * (num(c.amount) || 0);
+  const cashSorted = () => [...S.cash].sort((a, b) => new Date(a.time) - new Date(b.time));
+  function cashTotals() {
+    let dep = 0, wd = 0;
+    for (const c of S.cash) { if (c.type === 'wd') wd += num(c.amount) || 0; else dep += num(c.amount) || 0; }
+    const tradePL = S.trades.reduce((a, t) => a + (pl(t) || 0), 0);
+    return { dep, wd, net: dep - wd, tradePL, balance: dep - wd + tradePL };
+  }
+  function currentBalance() { return cashTotals().balance; }
+  // 특정 시각 직전의 잔고 (입출금 + 그때까지 청산된 매매 손익)
+  function balanceAt(date) {
+    if (!date) return 0;
+    let b = 0;
+    for (const c of S.cash) if (new Date(c.time) < date) b += cashSigned(c);
+    for (const t of S.trades) { const p = pl(t); if (p != null && new Date(tradeTime(t)) < date) b += p; }
+    return b;
+  }
+  // 기간 수익률의 기준 = 기간 시작 잔고 + 기간 중 입금 (출금·매매손익 제외)
+  function periodBase() {
+    const r = periodRange(PER.unit, PER.off);
+    const deps = S.cash.filter(c => c.type !== 'wd' && (!r || (new Date(c.time) >= r[0] && new Date(c.time) < r[1]))).reduce((a, c) => a + (num(c.amount) || 0), 0);
+    return (r ? balanceAt(r[0]) : 0) + deps;
   }
 
   function inPeriod(t, p) {
@@ -771,8 +826,8 @@
   function applyColor() { document.documentElement.dataset.color = S.settings.colorMode === 'kr' ? 'kr' : 'global'; }
 
   function renderBalPill() {
-    const b = currentBalance(), start = num(S.settings.startBalance) || 0;
-    $('#balPill').innerHTML = `$${b.toLocaleString('en-US', { maximumFractionDigits: 2 })} <span class="${cls(b - start)}">${start ? pct((b - start) / start) : ''}</span>`;
+    const c = cashTotals();
+    $('#balPill').innerHTML = `${money(c.balance, false)} <span class="${cls(c.tradePL)}">${c.dep ? pct(c.tradePL / c.dep) : ''}</span>`;
   }
 
   function guardHTML() {
@@ -792,7 +847,21 @@
   /* =========================================================
      대시보드
      ========================================================= */
-  const dash = { symbol: 'all', dim: 'setup' };
+  const dash = { symbol: 'all', dim: 'setup', curve: 'pl' };
+
+  // 계좌 잔고 곡선: 기간 시작 잔고에서 출발해 매매 손익과 입출금을 시간순으로 반영
+  function balanceCurve() {
+    const r = periodRange(PER.unit, PER.off), inR = d => !r || (d >= r[0] && d < r[1]);
+    const ev = [];
+    for (const t of S.trades) { const p = pl(t), d = new Date(tradeTime(t)); if (p != null && inR(d)) ev.push({ d, dv: p, kind: 'trade' }); }
+    for (const c of S.cash) { const d = new Date(c.time); if (inR(d)) ev.push({ d, dv: cashSigned(c), kind: c.type === 'wd' ? 'wd' : 'dep' }); }
+    if (!ev.length) return [];
+    ev.sort((a, b) => a.d - b.d);
+    let v = r ? balanceAt(r[0]) : 0;
+    const pts = [{ v, kind: 'start' }];
+    for (const e of ev) { v += e.dv; pts.push({ v, kind: e.kind }); }
+    return pts;
+  }
   const DIMS = [
     ['setup', '셋업'], ['symbol', '종목'], ['tf', '시간봉'], ['dir', '방향'], ['hour', '시간대'],
     ['weekday', '요일'], ['checklist', '체크리스트'], ['emotion', '감정'], ['mistake', '실수'],
@@ -831,24 +900,31 @@
 
     const list = S.trades.filter(t => t.status === 'closed' && inPER(t) && (dash.symbol === 'all' || t.symbol === dash.symbol));
     const s = stats(list);
-    const start = num(S.settings.startBalance) || 0;
+    const base = periodBase(), ct = cashTotals();
     const payoff = (s.avgWin != null && s.avgLoss) ? s.avgWin / -s.avgLoss : null;
     const k = [
-      ['총 손익', `<span class="${cls(s.total)}">${money(s.total)}</span>`, start ? pct(s.total / start, 2) + ' (시작잔고 대비)' : ''],
+      ['총 손익', `<span class="${cls(s.total)}">${money(s.total)}</span>`, base > 0 ? pct(s.total / base, 2) + ' (투입 원금 대비)' : '입금 기록 없음'],
       ['승률', pct(s.winRate), `${s.w}승 ${s.l}패${s.be ? ' ' + s.be + '무' : ''}`],
       ['손익비 (평균)', payoff == null ? '—' : '1 : ' + payoff.toFixed(2), `<span class="up">${money(s.avgWin)}</span> / <span class="down">${money(s.avgLoss)}</span>`],
       ['기대값 / 거래', `<span class="${cls(s.exp)}">${money(s.exp)}</span>`, '평균 ' + rTxt(s.avgR)],
       ['Profit Factor', s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2), '총수익 ÷ 총손실'],
       ['거래 수', String(s.n), `진행중 ${S.trades.filter(t => t.status === 'open').length}건`],
-      ['최대 낙폭', `<span class="${s.mdd ? 'down' : ''}">${s.mdd ? '-' + money(s.mdd, false) : '$0.00'}</span>`, start ? pct(s.mdd / start) + ' (시작잔고 대비)' : ''],
+      ['최대 낙폭', `<span class="${s.mdd ? 'down' : ''}">${s.mdd ? '-' + money(s.mdd, false) : '$0.00'}</span>`, base > 0 ? pct(s.mdd / base) + ' (투입 원금 대비)' : ''],
       ['최대 연속 손실', s.maxStreak + '회', `설정 한도 ${S.settings.maxConsecLoss || '-'}회`],
-      ['현재 잔고', '$' + currentBalance().toLocaleString('en-US', { maximumFractionDigits: 2 }), '시작 $' + start.toLocaleString('en-US')],
+      ['현재 잔고', money(ct.balance, false), `순입금 ${money(ct.net, false)} + 매매 <span class="${cls(ct.tradePL)}">${money(ct.tradePL)}</span>`],
       ['평균 R', `<span class="${cls(s.avgR)}">${rTxt(s.avgR)}</span>`, '1R = 계획한 손실'],
     ];
     $('#kpis').innerHTML = k.map(([a, b, c]) => `<div class="kpi"><div class="k">${a}</div><div class="v">${b}</div><div class="s">${c}</div></div>`).join('');
 
-    $('#curveHint').textContent = s.n ? `${s.n}건 누적` : '';
-    requestAnimationFrame(() => drawEquity($('#equity'), s.curve));
+    $$('#curveMode button').forEach(b => b.classList.toggle('on', b.dataset.v === dash.curve));
+    if (dash.curve === 'bal') {
+      const pts = balanceCurve();
+      $('#curveHint').textContent = '전 종목 · ▲입금 ▼출금';
+      requestAnimationFrame(() => drawEquity($('#equity'), pts, { base: pts.length ? pts[0].v : 0, signed: false, empty: '이 기간에 잔고 변화가 없습니다' }));
+    } else {
+      $('#curveHint').textContent = s.n ? `${s.n}건 누적` : '';
+      requestAnimationFrame(() => drawEquity($('#equity'), s.curve, { base: 0, signed: true, empty: '청산된 매매가 없습니다' }));
+    }
 
     $('#bdDims').innerHTML = DIMS.map(([v, l]) => `<button class="chip sm ${dash.dim === v ? 'on' : ''}" data-action="dash-dim" data-v="${v}">${l}</button>`).join('');
     renderBreakdown(s.closed);
@@ -875,7 +951,7 @@
     }</tbody></table>`;
   }
 
-  function drawEquity(cv, curve) {
+  function drawEquity(cv, curve, opt = { base: 0, signed: true, empty: '청산된 매매가 없습니다' }) {
     const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
     if (!w || !h) return;
     cv.width = w * dpr; cv.height = h * dpr;
@@ -887,37 +963,49 @@
     ctx.font = '11px JetBrains Mono, monospace';
     if (curve.length < 2) {
       ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
-      ctx.fillText('청산된 매매가 없습니다', w / 2, h / 2); return;
+      ctx.fillText(opt.empty, w / 2, h / 2); return;
     }
-    const vals = curve.map(p => p.v);
-    let min = Math.min(...vals, 0), max = Math.max(...vals, 0);
+    const vals = curve.map(p => p.v), base = opt.base;
+    let min = Math.min(...vals, base), max = Math.max(...vals, base);
     if (max === min) { max += 1; min -= 1; }
-    const padT = 12, padB = 18, padL = 8, padR = 62;
+    const padT = 12, padB = 18, padL = 8;
+    const padR = Math.max(62, ...[max, min, base].map(v => ctx.measureText(money(v, opt.signed)).width + 12));
     const X = i => padL + (w - padL - padR) * (i / (curve.length - 1));
     const Y = v => padT + (h - padT - padB) * (1 - (v - min) / (max - min));
 
-    // 0선
+    // 기준선 (손익 0 또는 기간 시작 잔고)
     ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w - padR, Y(0)); ctx.stroke(); ctx.setLineDash([]);
-    // 축 라벨
+    ctx.beginPath(); ctx.moveTo(padL, Y(base)); ctx.lineTo(w - padR, Y(base)); ctx.stroke(); ctx.setLineDash([]);
+    // 축 라벨 (겹치면 기준선 라벨 생략)
     ctx.fillStyle = '#64748b'; ctx.textAlign = 'left';
-    [max, 0, min].forEach(v => ctx.fillText(money(v), w - padR + 6, Math.min(h - 4, Math.max(10, Y(v) + 4))));
+    const labels = [max, min]; if (Math.abs(Y(base) - Y(max)) > 14 && Math.abs(Y(base) - Y(min)) > 14) labels.push(base);
+    labels.forEach(v => ctx.fillText(money(v, opt.signed), w - padR + 6, Math.min(h - 4, Math.max(10, Y(v) + 4))));
     // 영역
     const last = vals[vals.length - 1];
-    const col = last >= 0 ? up : down;
+    const col = last >= base ? up : down;
     const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
     grad.addColorStop(0, col + '55'); grad.addColorStop(1, col + '00');
-    ctx.beginPath(); ctx.moveTo(X(0), Y(0));
+    ctx.beginPath(); ctx.moveTo(X(0), Y(base));
     curve.forEach((p, i) => ctx.lineTo(X(i), Y(p.v)));
-    ctx.lineTo(X(curve.length - 1), Y(0)); ctx.closePath();
+    ctx.lineTo(X(curve.length - 1), Y(base)); ctx.closePath();
     ctx.fillStyle = grad; ctx.fill();
     // 선
     ctx.beginPath(); curve.forEach((p, i) => i ? ctx.lineTo(X(i), Y(p.v)) : ctx.moveTo(X(i), Y(p.v)));
     ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
     // 점 (거래가 적을 때만)
-    if (curve.length <= 60) curve.slice(1).forEach((p, i) => {
+    const many = curve.length > 60;
+    curve.slice(1).forEach((p, i) => {
+      const x = X(i + 1), y = Y(p.v);
+      if (p.kind === 'dep' || p.kind === 'wd') {
+        // 입금 ▲ / 출금 ▼
+        const dir = p.kind === 'dep' ? -1 : 1;
+        ctx.beginPath(); ctx.moveTo(x, y + dir * 7); ctx.lineTo(x - 5, y - dir * 2); ctx.lineTo(x + 5, y - dir * 2); ctx.closePath();
+        ctx.fillStyle = '#818cf8'; ctx.fill();
+        return;
+      }
+      if (many) return;
       const d = p.v - curve[i].v;
-      ctx.beginPath(); ctx.arc(X(i + 1), Y(p.v), 2.6, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2);
       ctx.fillStyle = d >= 0 ? up : down; ctx.fill();
     });
   }
@@ -925,6 +1013,66 @@
   /* =========================================================
      매매일지
      ========================================================= */
+  function cashRowHTML(c) {
+    const dep = c.type !== 'wd', d = new Date(c.time);
+    return `<div class="cash-row" data-action="cash-edit" data-id="${esc(c.id)}">
+      <span style="display:flex;align-items:center;min-width:0"><span class="c-ico">${dep ? '▲' : '▼'}</span>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${dep ? '입금' : '출금'} · ${pad(d.getHours())}:${pad(d.getMinutes())}${c.memo ? ' · ' + esc(c.memo) : ''}${c.mt5Id ? ' · MT5' : ''}</span></span>
+      <b>${dep ? '+' : '-'}${money(num(c.amount), false)}</b></div>`;
+  }
+
+  function renderCash() {
+    const t = cashTotals();
+    $('#cashSum').innerHTML = `
+      <dt>총 입금</dt><dd>${money(t.dep, false)}</dd>
+      <dt>총 출금</dt><dd>${t.wd ? '-' + money(t.wd, false) : '$0.00'}</dd>
+      <dt>순입금 (투입 원금)</dt><dd>${money(t.net, false)}</dd>
+      <dt>매매 손익 (누적)</dt><dd class="${cls(t.tradePL)}">${money(t.tradePL)}</dd>
+      <dt class="total">현재 잔고</dt><dd class="total">${money(t.balance, false)}</dd>`;
+    const rows = cashSorted().reverse();
+    $('#cashList').innerHTML = rows.length
+      ? rows.map(c => `<div style="margin-top:6px"><div class="sub" style="font-size:.72rem;margin:0 2px 3px">${ymd(new Date(c.time))}</div>${cashRowHTML(c)}</div>`).join('')
+      : '<div class="empty" style="padding:18px">입출금 기록이 없습니다. 첫 입금을 기록하거나 MT5 동기화를 하세요.</div>';
+  }
+
+  function openCashForm(id) {
+    const ex = id && S.cash.find(c => c.id === id);
+    const c = ex ? { ...ex } : { id: uid(), type: 'dep', amount: '', time: toLocalInput(new Date()), memo: '' };
+    dialog(ex ? '입출금 수정' : '입금 / 출금 기록', `
+      <div class="form-gap">
+        <div class="seg" id="cfType"><button type="button" data-v="dep" class="${c.type !== 'wd' ? 'on' : ''}">입금</button><button type="button" data-v="wd" class="${c.type === 'wd' ? 'on' : ''}">출금</button></div>
+        <div class="row">
+          <div class="field"><label for="cfAmount">금액 ($)</label><input type="number" inputmode="decimal" class="num-in" id="cfAmount" value="${esc(c.amount)}" min="0"></div>
+          <div class="field"><label for="cfTime">날짜·시각</label><input type="datetime-local" id="cfTime" value="${esc(c.time)}"></div>
+        </div>
+        <div class="field"><label for="cfMemo">메모 (선택)</label><input type="text" id="cfMemo" value="${esc(c.memo)}" placeholder="예: 월급 일부 입금, 수익 출금"></div>
+        ${c.mt5Id ? '<div class="alert info">MT5에서 가져온 기록입니다. 금액·시각은 동기화 때 MT5 값으로 갱신됩니다.</div>' : ''}
+      </div>`, [
+      ...(ex ? [{ label: '삭제', cls: 'danger', onClick: () => deleteCash(c) }] : []),
+      { label: '취소', value: null },
+      { label: '저장', cls: 'primary', onClick: () => {
+        const amount = num($('#cfAmount').value), time = $('#cfTime').value;
+        if (!amount || amount <= 0) { toast('0보다 큰 금액을 입력하세요'); return; }
+        if (!time) { toast('날짜·시각을 입력하세요'); return; }
+        Object.assign(c, { type: $('#cfType .on').dataset.v, amount, time, memo: $('#cfMemo').value.trim() });
+        delete c.auto;
+        const i = S.cash.findIndex(x => x.id === c.id);
+        if (i >= 0) S.cash[i] = c; else S.cash.push(c);
+        save(); closeDialog(); toast(ex ? '수정했습니다' : '기록했습니다'); renderAll();
+      } },
+    ]);
+    $('#cfType').onclick = e => { const b = e.target.closest('button'); if (b) $$('#cfType button').forEach(x => x.classList.toggle('on', x === b)); };
+    if (!ex) setTimeout(() => $('#cfAmount') && $('#cfAmount').focus(), 50);
+  }
+
+  async function deleteCash(c) {
+    closeDialog();
+    if (!await ask(`${c.type === 'wd' ? '출금' : '입금'} ${money(num(c.amount), false)} 기록을 삭제할까요?`, '삭제', true)) return;
+    S.cash = S.cash.filter(x => x.id !== c.id);
+    if (c.mt5Id && !S.settings.mt5Ignored.includes(c.mt5Id)) S.settings.mt5Ignored.push(c.mt5Id);
+    save(); toast('삭제했습니다'); renderAll();
+  }
+
   function fillJournalFilters() {
     const sy = $('#jSymbol');
     const sv = sy.value || 'all';
@@ -942,10 +1090,12 @@
       (!q || [t.notes, t.setup, t.symbol, t.emotion, ...(t.mistakes || [])].join(' ').toLowerCase().includes(q))
     ).sort((a, b) => new Date(tradeTime(b)) - new Date(tradeTime(a)));
 
+    // 입출금은 종목·상태·검색 필터가 없을 때만 함께 표시
+    const cashList = (sy === 'all' && st === 'all' && !q) ? S.cash.filter(c => { const r = periodRange(PER.unit, PER.off), d = new Date(c.time); return !r || (d >= r[0] && d < r[1]); }) : [];
     const s = stats(list);
     $('#jSummary').innerHTML = list.length ? `${list.length}건 · 손익 <span class="${cls(s.total)} mono">${money(s.total)}</span> · 승률 ${pct(s.winRate, 0)}` : '';
 
-    if (!list.length) {
+    if (!list.length && !cashList.length) {
       $('#jList').innerHTML = S.trades.length
         ? '<div class="empty">조건에 맞는 매매가 없습니다.</div>'
         : '<div class="empty">아직 기록이 없습니다.<br>오른쪽 아래 <b>+</b> 버튼으로 첫 매매를 기록하세요.<br><br>💡 계산기에서 계획을 세운 뒤 <b>"일지 기록"</b>을 누르면 자동으로 채워집니다.</div>';
@@ -954,12 +1104,15 @@
     let html = '', lastDay = '';
     const daySum = {};
     list.forEach(t => { const d = ymd(new Date(tradeTime(t))); daySum[d] = (daySum[d] || 0) + (pl(t) || 0); });
-    for (const t of list) {
-      const d = new Date(tradeTime(t)), day = ymd(d);
+    const items = [...list.map(t => ({ t, d: new Date(tradeTime(t)) })), ...cashList.map(c => ({ c, d: new Date(c.time) }))].sort((a, b) => b.d - a.d);
+    for (const it of items) {
+      const d = it.d, day = ymd(d);
       if (day !== lastDay) {
-        html += `<div class="day-head"><span>${day} (${WEEKDAYS[d.getDay()]})</span><span class="mono ${cls(daySum[day])}">${money(daySum[day])}</span></div>`;
+        html += `<div class="day-head"><span>${day} (${WEEKDAYS[d.getDay()]})</span>${daySum[day] != null ? `<span class="mono ${cls(daySum[day])}">${money(daySum[day])}</span>` : ''}</div>`;
         lastDay = day;
       }
+      if (it.c) { html += cashRowHTML(it.c); continue; }
+      const t = it.t;
       const p = pl(t), r = rmul(t), sp = sym(t.symbol);
       const dg = Math.max(priceDigits(t.entry), priceDigits(t.exit), 2);
       const ck = checklistDone(t);
@@ -1230,6 +1383,7 @@
 
     // 경고
     const g = todayInfo(), al = [];
+    if (num(C.bal) == null && !(n.bal > 0)) al.push(['', '잔고가 0입니다. 위 칸에 잔고를 직접 넣거나, 설정 → 계좌 · 입출금에서 입금을 기록(또는 MT5 동기화)하세요.']);
     if (g.stop.length) al.push(['bad', '⛔ 오늘은 매매 중단 규칙에 걸렸습니다: ' + g.stop.join(', ')]);
     if (tooSmall) al.push(['bad', `최소 랏(${n.minLot})으로도 위험이 ${money(n.minRisk, false)} (${pct(n.minRisk / n.bal, 2)})입니다. 손절폭을 줄이거나 진입을 보류하세요.`]);
     if (g.remaining != null && n.actual != null && n.actual > g.remaining + 1e-9) al.push(['bad', `이 매매의 위험(${money(n.actual, false)})이 오늘 남은 허용 손실(${money(g.remaining, false)})보다 큽니다.`]);
@@ -1285,6 +1439,7 @@
     let bytes = 0;
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('tradedesk')) bytes += (localStorage.getItem(k) || '').length * 2; } } catch (e) {}
     renderMT5Status();
+    renderCash();
     $('#storageInfo').textContent = `매매 ${S.trades.length}건 · 사용 중 약 ${(bytes / 1024 / 1024).toFixed(2)}MB (브라우저 한도 보통 5MB — 스크린샷이 대부분 차지)`;
   }
 
@@ -1299,7 +1454,7 @@
     const images = {};
     S.trades.forEach(t => { const im = getImgs(t.id); if (im.length) images[t.id] = im; });
     const stamp = toLocalInput(new Date()).replace(/[-:T]/g, '').slice(0, 12);
-    const text = JSON.stringify({ app: 'tradedesk', version: 1, exportedAt: new Date().toISOString(), settings: S.settings, trades: S.trades, images });
+    const text = JSON.stringify({ app: 'tradedesk', version: 1, exportedAt: new Date().toISOString(), settings: S.settings, trades: S.trades, cash: S.cash, images });
     dialog('백업 내보내기', `<p>매매 ${S.trades.length}건 · ${(text.length / 1024).toFixed(0)}KB\n파일 저장이 안 되는 환경(앱 미리보기 등)에서는 <b>복사</b> 후 메모앱·카톡 나에게 보내기 등에 붙여넣어 옮기세요.</p>
       <textarea id="bkText" readonly>${esc(text)}</textarea>`, [
       { label: '닫기', value: null },
@@ -1345,13 +1500,17 @@
       if (mode === 'replace') {
         if (!await ask(`현재 데이터(${S.trades.length}건)를 지우고 백업(${d.trades.length}건)으로 바꿀까요?`, '덮어쓰기', true)) return;
         S.trades.forEach(t => setImgs(t.id, []));
-        S = { settings: { ...clone(DEFAULTS), ...(d.settings || {}) }, trades: d.trades };
+        S = fromData(d);
       } else {
         const ids = new Set(S.trades.map(t => t.id));
         let added = 0, updated = 0;
         for (const t of d.trades) {
           if (ids.has(t.id)) { S.trades[S.trades.findIndex(x => x.id === t.id)] = t; updated++; }
           else { S.trades.push(t); added++; }
+        }
+        for (const c of (Array.isArray(d.cash) ? d.cash : [])) {
+          const i = S.cash.findIndex(x => x.id === c.id);
+          if (i >= 0) S.cash[i] = c; else S.cash.push(c);
         }
         toast(`합치기 완료: 새 기록 ${added}건, 갱신 ${updated}건`);
       }
@@ -1391,9 +1550,20 @@
     const st = S.settings, ignored = new Set(st.mt5Ignored || []);
     let added = 0, updated = 0, linked = 0, skipped = 0;
     const unknown = new Set();
+    let cashAdded = 0;
     for (const r of rows) {
       const pid = r.position_id;
       if (!pid || !r.open_time) continue;
+      if (r.status === 'BALANCE') {
+        // MT5 입출금 (EA가 DEP/WD로 내보냄)
+        const cid = 'c' + pid, amt = Math.abs(num(r.net) || 0);
+        if (ignored.has(cid) || !amt) continue;
+        const rec = { type: r.dir === 'WD' ? 'wd' : 'dep', amount: amt, time: r.open_time };
+        const ex = S.cash.find(c => c.mt5Id === cid);
+        if (ex) Object.assign(ex, rec);
+        else { S.cash.push({ id: 'mt5c-' + pid, mt5Id: cid, memo: r.comment || '', ...rec }); cashAdded++; }
+        continue;
+      }
       if (ignored.has(pid)) { skipped++; continue; }
       const symbol = mapSymbol(r.symbol) || r.symbol;
       if (!mapSymbol(r.symbol)) unknown.add(r.symbol);
@@ -1426,11 +1596,16 @@
         added++;
       }
     }
+    // MT5 입금이 들어오면 예전 "시작 잔고"에서 옮겨 온 임시 입금은 중복이므로 제거
+    let replacedStart = false;
+    if (S.cash.some(c => c.mt5Id && c.type === 'dep') && S.cash.some(c => c.auto)) { S.cash = S.cash.filter(c => !c.auto); replacedStart = true; }
     st.mt5LastSync = new Date().toISOString();
     save(); renderAll();
     const msg = [`새 매매 ${added}건`, `갱신 ${updated}건`];
     if (linked) msg.push(`직접 기록과 연결 ${linked}건`);
     if (skipped) msg.push(`삭제해 둔 ${skipped}건 제외`);
+    if (cashAdded) msg.push(`입출금 ${cashAdded}건`);
+    if (replacedStart) msg.push('예전 "시작 잔고"를 MT5 입금 기록으로 대체');
     const todo = S.trades.filter(needsReview).length;
     dialog('MT5 동기화 완료', `<p>${msg.join(' · ')}</p>
       ${todo ? `<p style="margin-top:8px">셋업을 아직 적지 않은 MT5 매매가 <b>${todo}건</b> 있습니다. 매매일지에서 <b>정리 필요</b>로 모아 볼 수 있어요.</p>` : ''}
@@ -1530,12 +1705,14 @@
       case 'export-json': exportJSON(); break;
       case 'export-csv': exportCSV(); break;
       case 'import-open': openImport(); break;
+      case 'cash-new': openCashForm(null); break;
+      case 'cash-edit': openCashForm(el.dataset.id); break;
       case 'mt5-sync': mt5Sync(); break;
       case 'reset-all':
         ask('모든 매매 기록과 설정을 삭제합니다. 되돌릴 수 없습니다.\n먼저 백업을 내보내셨나요?', '모두 삭제', true).then(ok => {
           if (!ok) return;
           S.trades.forEach(t => setImgs(t.id, []));
-          S = { settings: clone(DEFAULTS), trades: [] }; save();
+          S = { settings: clone(DEFAULTS), trades: [], cash: [] }; save();
           try { localStorage.removeItem(CALC_KEY); } catch (err) {}
           toast('초기화했습니다'); renderAll();
         }); break;
@@ -1606,6 +1783,7 @@
     else return;
     save(); renderBalPill(); toast('저장됨', 1000);
   });
+  $('#curveMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { dash.curve = b.dataset.v; renderDash(); } });
   $('#colorMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.settings.colorMode = b.dataset.v; save(); applyColor(); renderSettings(); } });
   $('#mt5File').addEventListener('change', async e => {
     const f = e.target.files[0]; e.target.value = '';

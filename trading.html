@@ -482,6 +482,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
+  const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
   const IMG_PREFIX = 'tradedesk.img.';
@@ -1216,8 +1217,8 @@
     dialog('백업 내보내기', `<p>매매 ${S.trades.length}건 · ${(text.length / 1024).toFixed(0)}KB\n파일 저장이 안 되는 환경(앱 미리보기 등)에서는 <b>복사</b> 후 메모앱·카톡 나에게 보내기 등에 붙여넣어 옮기세요.</p>
       <textarea id="bkText" readonly>${esc(text)}</textarea>`, [
       { label: '닫기', value: null },
-      { label: '복사', onClick: () => copyText(text, $('#bkText')) },
-      { label: '파일 저장', cls: 'primary', onClick: () => { download(`tradedesk-backup-${stamp}.json`, text, 'application/json'); toast('파일 저장을 시작했습니다'); } },
+      { label: '복사', cls: CAN_DOWNLOAD ? '' : 'primary', onClick: () => copyText(text, $('#bkText')) },
+      ...(CAN_DOWNLOAD ? [{ label: '파일 저장', cls: 'primary', onClick: () => { download(`tradedesk-backup-${stamp}.json`, text, 'application/json'); toast('파일 저장을 시작했습니다'); } }] : []),
     ]);
   }
   function copyText(text, ta) {
@@ -1242,7 +1243,12 @@
       t.entry, t.sl, t.tp, t.exit, t.lot, t.comm, fx(riskUsd(t)), fx(pl(t)), fx(rmul(t)),
       t.checkTotal ? `${(t.checks || []).length}/${t.checkTotal}` : '', t.emotion, (t.mistakes || []).join(' / '), t.notes,
     ].map(q).join(','));
-    download(`tradedesk-${ymd(new Date())}.csv`, '﻿' + [head.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8');
+    const csv = [head.join(','), ...rows].join('\n');
+    if (CAN_DOWNLOAD) { download(`tradedesk-${ymd(new Date())}.csv`, '\uFEFF' + csv, 'text/csv;charset=utf-8'); return; }
+    dialog('CSV 내보내기', `<p>복사해서 엑셀이나 구글 시트에 붙여넣으세요.</p><textarea id="csvText" readonly>${esc(csv)}</textarea>`, [
+      { label: '닫기', value: null },
+      { label: '복사', cls: 'primary', onClick: () => copyText(csv, $('#csvText')) },
+    ]);
   }
   async function importText(text, mode) {
     try {

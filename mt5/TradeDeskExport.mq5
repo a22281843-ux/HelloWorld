@@ -5,7 +5,7 @@
 //|  - 포지션 단위로 묶어서 MQL5\Files\TradeDesk_history.csv 에 저장 |
 //+------------------------------------------------------------------+
 #property copyright "Trade Desk"
-#property version   "1.03"
+#property version   "1.04"
 #property description "Trade Desk 매매일지용 거래내역 자동 내보내기 (읽기 전용, 주문 안 함)"
 
 input int    InpDays     = 0;                       // 내보낼 기간(일), 0 = 전체 (잔고 계산을 위해 전체 권장)
@@ -34,6 +34,7 @@ struct PosRow
   };
 
 PosRow g_rows[];
+long   g_openIds[];   // MT5에 실제로 열려 있는 포지션 번호
 
 // 입출금·기타 잔고 항목 (매매가 아닌 체결)
 string   g_cashKind[];   // DEP 입금, WD 출금, ADJ 수수료·이자·보정 등
@@ -79,6 +80,14 @@ int FindRow(const long id)
       if(g_rows[i].id == id)
          return(i);
    return(-1);
+  }
+
+bool IsOpenId(const long id)
+  {
+   for(int i = ArraySize(g_openIds) - 1; i >= 0; i--)
+      if(g_openIds[i] == id)
+         return(true);
+   return(false);
   }
 
 int AddRow(const long id)
@@ -144,6 +153,7 @@ void Export()
       return;
      }
    ArrayResize(g_rows, 0);
+   ArrayResize(g_openIds, 0);
    ArrayResize(g_cashKind, 0);
    ArrayResize(g_cashTicket, 0);
    ArrayResize(g_cashTime, 0);
@@ -239,6 +249,9 @@ void Export()
       if(pt == 0)
          continue;
       long pid = PositionGetInteger(POSITION_IDENTIFIER);
+      int n = ArraySize(g_openIds);
+      ArrayResize(g_openIds, n + 1);
+      g_openIds[n] = pid;
       int k = FindRow(pid);
       if(k < 0)
          continue;
@@ -267,11 +280,10 @@ void Export()
      {
       if(g_rows[k].vin <= 0)
          continue; // 진입 체결이 기간 밖인 포지션은 제외
-      string status = "OPEN";
-      if(g_rows[k].vout >= g_rows[k].vin - 1e-8)
-         status = "CLOSED";
-      else if(g_rows[k].vout > 0)
-         status = "PARTIAL";
+      // MT5에 열려 있지 않은 포지션은 수량 계산과 상관없이 청산으로 처리
+      string status = "CLOSED";
+      if(IsOpenId(g_rows[k].id))
+         status = (g_rows[k].vout > 0) ? "PARTIAL" : "OPEN";
 
       string sym  = g_rows[k].sym;
       double pin  = g_rows[k].pin / g_rows[k].vin;
@@ -315,7 +327,7 @@ void Export()
      }
    // 현재 계좌 잔고 (Trade Desk가 대조용으로 사용): status=ACCOUNT, net=잔고
    FileWriteString(h, "0,,ACCOUNT,," + LocalTimeStr(TimeTradeServer(), offset) + ",,,,,,,,,," +
-                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + ",ACCOUNT,0,," + ccy + "\r\n");
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + ",ACCOUNT,0,EA v1.04," + ccy + "\r\n");
    FileClose(h);
 
    // 다 쓴 뒤 한 번에 교체해서, 읽는 도중 반쯤 쓰인 파일이 보이지 않게 함

@@ -297,7 +297,7 @@
 
   <div class="wrap">
     <header class="top">
-      <div class="brand"><span class="brand-dot"></span>TRADE DESK <small>골드 · 나스닥</small></div>
+      <div class="brand"><span class="brand-dot"></span>TRADE DESK <small>골드 · 나스닥 · <span id="appVer"></span></small></div>
       <div class="bal-pill" id="balPill">—</div>
     </header>
 
@@ -535,6 +535,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
+  const APP_VERSION = 'v1.6';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -1561,10 +1562,10 @@
     const st = S.settings, ignored = new Set(st.mt5Ignored || []);
     let added = 0, updated = 0, linked = 0, skipped = 0;
     const unknown = new Set();
-    let cashAdded = 0;
+    let cashAdded = 0, sawAccount = false;
     for (const r of rows) {
       const pid = r.position_id;
-      if (r.status === 'ACCOUNT') { st.mt5Balance = { value: num(r.net), time: r.open_time }; continue; }
+      if (r.status === 'ACCOUNT') { sawAccount = true; st.mt5Balance = { value: num(r.net), time: r.open_time }; continue; }
       if (!pid || !r.open_time) continue;
       if (r.status === 'BALANCE') {
         // MT5 입출금(DEP/WD)과 기타 잔고 변동(ADJ: 수수료·이자·보정 등)
@@ -1623,6 +1624,7 @@
     const todo = S.trades.filter(needsReview).length;
     dialog('MT5 동기화 완료', `<p>${msg.join(' · ')}</p>
       ${todo ? `<p style="margin-top:8px">셋업을 아직 적지 않은 MT5 매매가 <b>${todo}건</b> 있습니다. 매매일지에서 <b>정리 필요</b>로 모아 볼 수 있어요.</p>` : ''}
+      ${!sawAccount ? `<div class="alert bad" style="margin-top:10px"><b>MT5 쪽 EA가 예전 버전입니다.</b> 입출금과 MT5 잔고 정보가 파일에 없어서 잔고를 맞출 수 없어요.\nMT5 내비게이터에서 예전 TradeDeskExport를 지우고, 새 파일을 넣은 뒤 F7 컴파일 → 차트에 다시 붙이고 동기화하세요.</div>` : ''}
       ${rc ? (rc.ok ? `<div class="alert info" style="margin-top:10px">✅ 잔고가 MT5와 일치합니다 (${money(rc.mt5, false)})</div>`
         : `<div class="alert bad" style="margin-top:10px">잔고가 MT5와 <b>${money(rc.diff)}</b> 다릅니다 (MT5 ${money(rc.mt5, false)} / Trade Desk ${money(rc.mine, false)}). <b>설정 → MT5 연동</b>에서 원인을 확인하고 맞출 수 있어요.</div>`) : ''}
       ${unknown.size ? `<div class="alert" style="margin-top:10px">설정에 없는 종목: <b>${[...unknown].map(esc).join(', ')}</b>\n손익은 MT5 값이라 정확하지만, 위험·R 계산을 하려면 설정 → 종목 사양에 이 이름으로 추가하세요.</div>` : ''}`,
@@ -1892,6 +1894,7 @@
   window.addEventListener('storage', e => { if (e.key === KEY) { S = load(); renderAll(); } });
 
   /* 시작 */
+  $('#appVer').textContent = APP_VERSION;
   applyColor();
   renderBalPill();
   setTab(location.hash.slice(1) || 'dash');

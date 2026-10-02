@@ -5,7 +5,7 @@
 //|  - 포지션 단위로 묶어서 MQL5\Files\TradeDesk_history.csv 에 저장 |
 //+------------------------------------------------------------------+
 #property copyright "Trade Desk"
-#property version   "1.02"
+#property version   "1.03"
 #property description "Trade Desk 매매일지용 거래내역 자동 내보내기 (읽기 전용, 주문 안 함)"
 
 input int    InpDays     = 0;                       // 내보낼 기간(일), 0 = 전체 (잔고 계산을 위해 전체 권장)
@@ -35,7 +35,8 @@ struct PosRow
 
 PosRow g_rows[];
 
-// 입출금 (DEAL_TYPE_BALANCE)
+// 입출금·기타 잔고 항목 (매매가 아닌 체결)
+string   g_cashKind[];   // DEP 입금, WD 출금, ADJ 수수료·이자·보정 등
 ulong    g_cashTicket[];
 datetime g_cashTime[];
 double   g_cashAmount[];
@@ -143,6 +144,7 @@ void Export()
       return;
      }
    ArrayResize(g_rows, 0);
+   ArrayResize(g_cashKind, 0);
    ArrayResize(g_cashTicket, 0);
    ArrayResize(g_cashTime, 0);
    ArrayResize(g_cashAmount, 0);
@@ -155,17 +157,23 @@ void Export()
       if(ticket == 0)
          continue;
       ENUM_DEAL_TYPE type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(ticket, DEAL_TYPE);
-      if(type == DEAL_TYPE_BALANCE)
+      if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
         {
-         // 입금(+) / 출금(-)
-         double amt = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+         // 크레딧은 잔고가 아닌 별도 항목이라 제외
+         if(type == DEAL_TYPE_CREDIT)
+            continue;
+         // 입출금(BALANCE)과 그 밖의 잔고 변동(수수료·이자·보정·보너스 등)
+         double amt = HistoryDealGetDouble(ticket, DEAL_PROFIT) + HistoryDealGetDouble(ticket, DEAL_COMMISSION)
+                      + HistoryDealGetDouble(ticket, DEAL_SWAP) + HistoryDealGetDouble(ticket, DEAL_FEE);
          if(amt != 0)
            {
             int c = ArraySize(g_cashTicket);
+            ArrayResize(g_cashKind, c + 1);
             ArrayResize(g_cashTicket, c + 1);
             ArrayResize(g_cashTime, c + 1);
             ArrayResize(g_cashAmount, c + 1);
             ArrayResize(g_cashComment, c + 1);
+            g_cashKind[c]    = (type == DEAL_TYPE_BALANCE) ? (amt > 0 ? "DEP" : "WD") : "ADJ";
             g_cashTicket[c]  = ticket;
             g_cashTime[c]    = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
             g_cashAmount[c]  = amt;
@@ -173,8 +181,6 @@ void Export()
            }
          continue;
         }
-      if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
-         continue; // 크레딧·보너스 등 제외
 
       ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
       long   pid   = HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
@@ -295,19 +301,21 @@ void Export()
       FileWriteString(h, line);
       written++;
      }
-   // 입출금: status=BALANCE, dir=DEP/WD, net=금액
+   // 입출금·기타: status=BALANCE, dir=DEP/WD/ADJ, net=부호 있는 금액
    for(int c = 0; c < ArraySize(g_cashTicket); c++)
      {
-      double amt = g_cashAmount[c];
       string line =
          IntegerToString((long)g_cashTicket[c]) + ",," +
-         (amt > 0 ? "DEP" : "WD") + ",," +
+         g_cashKind[c] + ",," +
          LocalTimeStr(g_cashTime[c], offset) + ",,,,,,,,,," +
-         DoubleToString(MathAbs(amt), 2) + ",BALANCE,0," +
+         DoubleToString(g_cashAmount[c], 2) + ",BALANCE,0," +
          Clean(g_cashComment[c]) + "," +
          ccy + "\r\n";
       FileWriteString(h, line);
      }
+   // 현재 계좌 잔고 (Trade Desk가 대조용으로 사용): status=ACCOUNT, net=잔고
+   FileWriteString(h, "0,,ACCOUNT,," + LocalTimeStr(TimeTradeServer(), offset) + ",,,,,,,,,," +
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + ",ACCOUNT,0,," + ccy + "\r\n");
    FileClose(h);
 
    // 다 쓴 뒤 한 번에 교체해서, 읽는 도중 반쯤 쓰인 파일이 보이지 않게 함

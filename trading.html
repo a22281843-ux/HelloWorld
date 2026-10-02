@@ -328,7 +328,7 @@
         <input type="search" class="grow" id="jSearch" placeholder="메모·셋업 검색">
         <select id="jSymbol" style="width:auto"></select>
         <select id="jStatus" style="width:auto">
-          <option value="all">전체 상태</option><option value="open">진행중</option><option value="closed">청산</option><option value="todo">정리 필요 (MT5)</option>
+          <option value="all">전체 상태</option><option value="open">진행중</option><option value="closed">청산</option><option value="todo">정리 필요 (MT5)</option><option value="manual">직접 기록 (MT5 없음)</option>
         </select>
         <button class="btn sm" data-action="mt5-sync" title="MT5 거래내역 파일 읽기">⟳ MT5 동기화</button>
       </div>
@@ -468,6 +468,7 @@
           <div class="card">
             <h2>MT5 연동 (반자동)</h2>
             <div class="sub" style="font-size:.85rem" id="mt5Status"></div>
+            <div id="reconBox" style="margin-top:10px"></div>
             <div class="btn-row" style="margin-top:12px">
               <button class="btn primary" data-action="mt5-sync">⟳ MT5 동기화</button>
             </div>
@@ -694,13 +695,20 @@
   const checklistDone = t => t.checkTotal ? (t.checks || []).length >= t.checkTotal : null;
 
   /* ---------- 입출금 ---------- */
-  const cashSigned = c => (c.type === 'wd' ? -1 : 1) * (num(c.amount) || 0);
+  // dep 입금(+), wd 출금(-), adj 수수료·이자·보정 등 (금액 자체에 부호가 있음)
+  const cashSigned = c => c.type === 'adj' ? (num(c.amount) || 0) : (c.type === 'wd' ? -1 : 1) * (num(c.amount) || 0);
+  // 아직 열려 있지만 이미 잔고에 반영된 금액 (일부 청산 손익, 진입 수수료)
+  const realizedOpen = t => t.status === 'open' ? (num(t.realized) || 0) : 0;
   const cashSorted = () => [...S.cash].sort((a, b) => new Date(a.time) - new Date(b.time));
   function cashTotals() {
-    let dep = 0, wd = 0;
-    for (const c of S.cash) { if (c.type === 'wd') wd += num(c.amount) || 0; else dep += num(c.amount) || 0; }
-    const tradePL = S.trades.reduce((a, t) => a + (pl(t) || 0), 0);
-    return { dep, wd, net: dep - wd, tradePL, balance: dep - wd + tradePL };
+    let dep = 0, wd = 0, adj = 0;
+    for (const c of S.cash) {
+      if (c.type === 'adj') adj += num(c.amount) || 0;
+      else if (c.type === 'wd') wd += num(c.amount) || 0;
+      else dep += num(c.amount) || 0;
+    }
+    const tradePL = S.trades.reduce((a, t) => a + (pl(t) || 0) + realizedOpen(t), 0);
+    return { dep, wd, adj, net: dep - wd, tradePL, balance: dep - wd + adj + tradePL };
   }
   function currentBalance() { return cashTotals().balance; }
   // 특정 시각 직전의 잔고 (입출금 + 그때까지 청산된 매매 손익)
@@ -708,7 +716,7 @@
     if (!date) return 0;
     let b = 0;
     for (const c of S.cash) if (new Date(c.time) < date) b += cashSigned(c);
-    for (const t of S.trades) { const p = pl(t); if (p != null && new Date(tradeTime(t)) < date) b += p; }
+    for (const t of S.trades) { const p = (pl(t) || 0) + realizedOpen(t); if (p && new Date(tradeTime(t)) < date) b += p; }
     return b;
   }
   // 기간 수익률의 기준 = 기간 시작 잔고 + 기간 중 입금 (출금·매매손익 제외)
@@ -1014,11 +1022,12 @@
      매매일지
      ========================================================= */
   function cashRowHTML(c) {
-    const dep = c.type !== 'wd', d = new Date(c.time);
+    const v = cashSigned(c), d = new Date(c.time);
+    const label = c.type === 'adj' ? '조정' : c.type === 'wd' ? '출금' : '입금', ico = c.type === 'adj' ? '±' : c.type === 'wd' ? '▼' : '▲';
     return `<div class="cash-row" data-action="cash-edit" data-id="${esc(c.id)}">
-      <span style="display:flex;align-items:center;min-width:0"><span class="c-ico">${dep ? '▲' : '▼'}</span>
-        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${dep ? '입금' : '출금'} · ${pad(d.getHours())}:${pad(d.getMinutes())}${c.memo ? ' · ' + esc(c.memo) : ''}${c.mt5Id ? ' · MT5' : ''}</span></span>
-      <b>${dep ? '+' : '-'}${money(num(c.amount), false)}</b></div>`;
+      <span style="display:flex;align-items:center;min-width:0"><span class="c-ico">${ico}</span>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label} · ${pad(d.getHours())}:${pad(d.getMinutes())}${c.memo ? ' · ' + esc(c.memo) : ''}${c.mt5Id ? ' · MT5' : ''}</span></span>
+      <b>${money(v)}</b></div>`;
   }
 
   function renderCash() {
@@ -1027,6 +1036,7 @@
       <dt>총 입금</dt><dd>${money(t.dep, false)}</dd>
       <dt>총 출금</dt><dd>${t.wd ? '-' + money(t.wd, false) : '$0.00'}</dd>
       <dt>순입금 (투입 원금)</dt><dd>${money(t.net, false)}</dd>
+      ${t.adj ? `<dt>수수료·이자·보정 등</dt><dd class="${cls(t.adj)}">${money(t.adj)}</dd>` : ''}
       <dt>매매 손익 (누적)</dt><dd class="${cls(t.tradePL)}">${money(t.tradePL)}</dd>
       <dt class="total">현재 잔고</dt><dd class="total">${money(t.balance, false)}</dd>`;
     const rows = cashSorted().reverse();
@@ -1040,7 +1050,7 @@
     const c = ex ? { ...ex } : { id: uid(), type: 'dep', amount: '', time: toLocalInput(new Date()), memo: '' };
     dialog(ex ? '입출금 수정' : '입금 / 출금 기록', `
       <div class="form-gap">
-        <div class="seg" id="cfType"><button type="button" data-v="dep" class="${c.type !== 'wd' ? 'on' : ''}">입금</button><button type="button" data-v="wd" class="${c.type === 'wd' ? 'on' : ''}">출금</button></div>
+        <div class="seg" id="cfType"><button type="button" data-v="dep" class="${c.type === 'dep' ? 'on' : ''}">입금</button><button type="button" data-v="wd" class="${c.type === 'wd' ? 'on' : ''}">출금</button>${c.type === 'adj' ? '<button type="button" data-v="adj" class="on">조정 (±)</button>' : ''}</div>
         <div class="row">
           <div class="field"><label for="cfAmount">금액 ($)</label><input type="number" inputmode="decimal" class="num-in" id="cfAmount" value="${esc(c.amount)}" min="0"></div>
           <div class="field"><label for="cfTime">날짜·시각</label><input type="datetime-local" id="cfTime" value="${esc(c.time)}"></div>
@@ -1052,9 +1062,10 @@
       { label: '취소', value: null },
       { label: '저장', cls: 'primary', onClick: () => {
         const amount = num($('#cfAmount').value), time = $('#cfTime').value;
-        if (!amount || amount <= 0) { toast('0보다 큰 금액을 입력하세요'); return; }
+        const typ = $('#cfType .on').dataset.v;
+        if (!amount || (typ !== 'adj' && amount <= 0)) { toast(typ === 'adj' ? '0이 아닌 금액을 입력하세요' : '0보다 큰 금액을 입력하세요'); return; }
         if (!time) { toast('날짜·시각을 입력하세요'); return; }
-        Object.assign(c, { type: $('#cfType .on').dataset.v, amount, time, memo: $('#cfMemo').value.trim() });
+        Object.assign(c, { type: typ, amount, time, memo: $('#cfMemo').value.trim() });
         delete c.auto;
         const i = S.cash.findIndex(x => x.id === c.id);
         if (i >= 0) S.cash[i] = c; else S.cash.push(c);
@@ -1086,7 +1097,7 @@
     const q = $('#jSearch').value.trim().toLowerCase();
     const sy = $('#jSymbol').value, st = $('#jStatus').value;
     const list = S.trades.filter(t =>
-      inPER(t) && (sy === 'all' || t.symbol === sy) && (st === 'all' || (st === 'todo' ? needsReview(t) : t.status === st)) &&
+      inPER(t) && (sy === 'all' || t.symbol === sy) && (st === 'all' || (st === 'todo' ? needsReview(t) : st === 'manual' ? !t.mt5Id : t.status === st)) &&
       (!q || [t.notes, t.setup, t.symbol, t.emotion, ...(t.mistakes || [])].join(' ').toLowerCase().includes(q))
     ).sort((a, b) => new Date(tradeTime(b)) - new Date(tradeTime(a)));
 
@@ -1553,12 +1564,13 @@
     let cashAdded = 0;
     for (const r of rows) {
       const pid = r.position_id;
+      if (r.status === 'ACCOUNT') { st.mt5Balance = { value: num(r.net), time: r.open_time }; continue; }
       if (!pid || !r.open_time) continue;
       if (r.status === 'BALANCE') {
-        // MT5 입출금 (EA가 DEP/WD로 내보냄)
-        const cid = 'c' + pid, amt = Math.abs(num(r.net) || 0);
-        if (ignored.has(cid) || !amt) continue;
-        const rec = { type: r.dir === 'WD' ? 'wd' : 'dep', amount: amt, time: r.open_time };
+        // MT5 입출금(DEP/WD)과 기타 잔고 변동(ADJ: 수수료·이자·보정 등)
+        const cid = 'c' + pid, v = num(r.net) || 0;
+        if (ignored.has(cid) || !v) continue;
+        const rec = r.dir === 'ADJ' ? { type: 'adj', amount: v, time: r.open_time } : { type: r.dir === 'WD' ? 'wd' : 'dep', amount: Math.abs(v), time: r.open_time };
         const ex = S.cash.find(c => c.mt5Id === cid);
         if (ex) Object.assign(ex, rec);
         else { S.cash.push({ id: 'mt5c-' + pid, mt5Id: cid, memo: r.comment || '', ...rec }); cashAdded++; }
@@ -1574,6 +1586,7 @@
         openTime: r.open_time, closeTime: closed ? r.close_time : '',
         entry: r.open_price, exit: closed ? r.close_price : '', lot: r.volume,
         plActual: closed ? r.net : '', comm: '',
+        realized: closed ? '' : r.net,   // 일부 청산 손익·진입 수수료 (이미 MT5 잔고에 반영됨)
       };
       const sl = num(r.sl) > 0 ? r.sl : '', tp = num(r.tp) > 0 ? r.tp : '';
 
@@ -1601,6 +1614,7 @@
     if (S.cash.some(c => c.mt5Id && c.type === 'dep') && S.cash.some(c => c.auto)) { S.cash = S.cash.filter(c => !c.auto); replacedStart = true; }
     st.mt5LastSync = new Date().toISOString();
     save(); renderAll();
+    const rc = reconInfo();
     const msg = [`새 매매 ${added}건`, `갱신 ${updated}건`];
     if (linked) msg.push(`직접 기록과 연결 ${linked}건`);
     if (skipped) msg.push(`삭제해 둔 ${skipped}건 제외`);
@@ -1609,9 +1623,16 @@
     const todo = S.trades.filter(needsReview).length;
     dialog('MT5 동기화 완료', `<p>${msg.join(' · ')}</p>
       ${todo ? `<p style="margin-top:8px">셋업을 아직 적지 않은 MT5 매매가 <b>${todo}건</b> 있습니다. 매매일지에서 <b>정리 필요</b>로 모아 볼 수 있어요.</p>` : ''}
+      ${rc ? (rc.ok ? `<div class="alert info" style="margin-top:10px">✅ 잔고가 MT5와 일치합니다 (${money(rc.mt5, false)})</div>`
+        : `<div class="alert bad" style="margin-top:10px">잔고가 MT5와 <b>${money(rc.diff)}</b> 다릅니다 (MT5 ${money(rc.mt5, false)} / Trade Desk ${money(rc.mine, false)}). <b>설정 → MT5 연동</b>에서 원인을 확인하고 맞출 수 있어요.</div>`) : ''}
       ${unknown.size ? `<div class="alert" style="margin-top:10px">설정에 없는 종목: <b>${[...unknown].map(esc).join(', ')}</b>\n손익은 MT5 값이라 정확하지만, 위험·R 계산을 하려면 설정 → 종목 사양에 이 이름으로 추가하세요.</div>` : ''}`,
-      [{ label: '닫기', value: null }, ...(todo ? [{ label: '정리하러 가기', cls: 'primary', value: 'todo' }] : [])]
-    ).then(v => { if (v === 'todo') { $('#jStatus').value = 'todo'; PER.unit = 'all'; setTab('journal'); } });
+      [{ label: '닫기', value: null },
+       ...(rc && !rc.ok ? [{ label: '잔고 차이 보기', value: 'recon' }] : []),
+       ...(todo ? [{ label: '정리하러 가기', cls: 'primary', value: 'todo' }] : [])]
+    ).then(v => {
+      if (v === 'todo') { $('#jStatus').value = 'todo'; PER.unit = 'all'; setTab('journal'); }
+      if (v === 'recon') { setTab('settings'); setTimeout(() => $('#reconBox') && $('#reconBox').scrollIntoView({ block: 'center' }), 50); }
+    });
   }
 
   // MT5 데이터 폴더는 AppData 안에 있어 크롬의 파일 기억 기능(File System Access)이 막혀 있음 → 일반 파일 선택 사용
@@ -1630,7 +1651,77 @@
     importMT5File(f);
   });
 
+  /* ---------- MT5 잔고 대조 ---------- */
+  function reconInfo() {
+    const m = S.settings.mt5Balance;
+    if (!m || num(m.value) == null) return null;
+    const mt5 = num(m.value), mine = currentBalance(), diff = mt5 - mine;
+    const manualCash = S.cash.filter(c => !c.mt5Id && !c.recon);
+    const manualTrades = S.trades.filter(t => !t.mt5Id && pl(t) != null);
+    const recon = S.cash.filter(c => c.recon);
+    const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+    return {
+      mt5, mine, diff, ok: Math.abs(diff) < 0.005, time: m.time,
+      manualCash, manualCashSum: sum(manualCash, cashSigned),
+      manualTrades, manualTradesSum: sum(manualTrades, t => pl(t) || 0),
+      recon, reconSum: sum(recon, cashSigned),
+      hasMt5Cash: S.cash.some(c => c.mt5Id),
+    };
+  }
+
+  function renderRecon() {
+    const el = $('#reconBox'); if (!el) return;
+    const r = reconInfo();
+    if (!r) { el.innerHTML = ''; return; }
+    if (r.ok) {
+      el.innerHTML = `<div class="alert info">✅ 잔고가 MT5와 일치합니다 · <span class="mono">${money(r.mt5, false)}</span>${r.recon.length ? ` <span class="muted">(보정 ${money(r.reconSum)} 포함)</span>` : ''}</div>`;
+      return;
+    }
+    const causes = [];
+    if (r.manualCash.length && r.hasMt5Cash)
+      causes.push(`<li><b>직접 입력한 입출금 ${r.manualCash.length}건</b> (합계 <span class="mono">${money(r.manualCashSum)}</span>) — MT5 입출금과 중복일 가능성이 큽니다.
+        <div style="margin-top:6px"><button class="btn sm" data-action="recon-del-cash">직접 입력한 입출금 삭제</button></div></li>`);
+    if (r.manualTrades.length)
+      causes.push(`<li><b>MT5에 없는 직접 기록 매매 ${r.manualTrades.length}건</b> (손익 합계 <span class="mono">${money(r.manualTradesSum)}</span>) — 연습으로 넣은 기록이나, MT5 매매와 연결되지 않은 중복일 수 있습니다.
+        <div style="margin-top:6px"><button class="btn sm" data-action="recon-show-manual">해당 매매 보기</button></div></li>`);
+    if (r.recon.length)
+      causes.push(`<li>예전에 넣은 <b>잔고 보정</b> <span class="mono">${money(r.reconSum)}</span>이 남아 있습니다. 아래 버튼을 다시 누르면 새로 계산합니다.</li>`);
+    if (!causes.length)
+      causes.push('<li>EA가 예전 버전이면 수수료·이자·일부 청산 손익이 빠질 수 있습니다. 새 EA로 바꾸고(컴파일 후 차트에 다시 붙이기) 다시 동기화해 보세요.</li>');
+    el.innerHTML = `<div class="alert bad">
+      <div>잔고가 MT5와 다릅니다</div>
+      <dl class="kv" style="margin:8px 0">
+        <dt>MT5 잔고</dt><dd>${money(r.mt5, false)}</dd>
+        <dt>Trade Desk 잔고</dt><dd>${money(r.mine, false)}</dd>
+        <dt>차이 (MT5 − Trade Desk)</dt><dd>${money(r.diff)}</dd>
+      </dl>
+      <div style="font-weight:700;margin-top:4px">의심되는 원인</div>
+      <ul style="margin:6px 0 0 16px;display:grid;gap:8px">${causes.join('')}</ul>
+      <div style="margin-top:12px;font-size:.8rem">원인을 정리한 뒤에도 차이가 남으면, 차이만큼 <b>잔고 보정</b> 기록을 넣어 MT5와 맞출 수 있습니다. 보정은 잔고에만 반영되고 매매 통계에는 들어가지 않아요.</div>
+      <div style="margin-top:8px"><button class="btn sm" data-action="recon-adjust">차이 ${money(r.diff)}를 보정으로 맞추기</button></div>
+    </div>`;
+  }
+
+  async function reconAction(a) {
+    const r = reconInfo(); if (!r) return;
+    if (a === 'recon-del-cash') {
+      if (!await ask(`직접 입력한 입출금 ${r.manualCash.length}건 (합계 ${money(r.manualCashSum)})을 삭제할까요?\nMT5에서 가져온 입출금은 그대로 남습니다.`, '삭제', true)) return;
+      const ids = new Set(r.manualCash.map(c => c.id));
+      S.cash = S.cash.filter(c => !ids.has(c.id));
+      save(); renderAll(); toast('삭제했습니다');
+    } else if (a === 'recon-show-manual') {
+      $('#jStatus').value = 'manual'; PER.unit = 'all'; setTab('journal');
+    } else if (a === 'recon-adjust') {
+      // 기존 보정을 지우고 남은 차이를 새로 계산
+      S.cash = S.cash.filter(c => !c.recon);
+      const diff = num(S.settings.mt5Balance.value) - currentBalance();
+      if (Math.abs(diff) >= 0.005) S.cash.push({ id: uid(), type: 'adj', amount: +diff.toFixed(2), time: toLocalInput(new Date()), memo: '잔고 보정 (MT5 기준)', recon: true });
+      save(); renderAll(); toast('MT5 잔고에 맞췄습니다');
+    }
+  }
+
   function renderMT5Status() {
+    renderRecon();
     const el = $('#mt5Status'); if (!el) return;
     const n = S.trades.filter(t => t.mt5Id).length, todo = S.trades.filter(needsReview).length;
     const last = S.settings.mt5LastSync ? new Date(S.settings.mt5LastSync) : null;
@@ -1706,6 +1797,7 @@
       case 'export-csv': exportCSV(); break;
       case 'import-open': openImport(); break;
       case 'cash-new': openCashForm(null); break;
+      case 'recon-del-cash': case 'recon-show-manual': case 'recon-adjust': reconAction(a); break;
       case 'cash-edit': openCashForm(el.dataset.id); break;
       case 'mt5-sync': mt5Sync(); break;
       case 'reset-all':

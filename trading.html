@@ -242,7 +242,7 @@
     .cb-params { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; }
     .cb-params label { display: flex; flex-direction: column; gap: 3px; font-size: .7rem; color: var(--muted); font-weight: 600; }
     .cb-params input { width: 76px; font-family: var(--mono); }
-    .cb-params select { width: auto; max-width: 100%; }
+    .cb-params select { width: auto; min-width: 140px; max-width: 100%; }
     .cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
     .cb-grid .field select, .cb-grid .field input { padding: 8px 10px; font-size: 15px; }
     .cb-res tbody tr { cursor: pointer; }
@@ -2251,8 +2251,11 @@
   const cbSave = () => { try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms, per: cb.per, mm: cb.mm })); } catch (e) {} };
   // 종목 사양(설정 탭)에서 1랏당 1.0 가격 변동 손익·수수료 기본값
   function cbSymDefaults(name) { const sp = sym(mapSymbol(name) || name); return { pv: num(sp.pv) ?? 1, comm: num(sp.comm) || 0 }; }
+  const cbPointDefault = name => /XAU|GOLD/i.test(name) ? 0.1 : 1;
   function cbMeta(name) {
     const m = cb.syms[name]; if (!m) return null;
+    if (!(num(m.point) > 0)) m.point = cbPointDefault(name);
+    if (!m.tz && BARS[name]) { const d = cbDetectTZ(BARS[name]); if (d) { m.gmt = d.gmt; m.dst = d.dst; m.tz = 'auto'; } else m.tz = 'fail'; cbSave(); }
     if (m.pv == null || m.comm == null) { const d = cbSymDefaults(name); if (m.pv == null) m.pv = d.pv; if (m.comm == null) m.comm = d.comm; }
     return m;
   }
@@ -2326,7 +2329,8 @@
       D.name = name; D.file = f.name;
       BARS[name] = D;
       try { await barsReq('readwrite', st => st.put(D, name)); } catch (e) { toast('⚠ 브라우저 저장이 안 돼서 이번 창에서만 쓸 수 있어요', 3500); }
-      if (!cb.syms[name]) cb.syms[name] = { point: /XAU|GOLD/.test(name) ? 0.1 : 1, gmt: 2, dst: true };
+      const tz = cbDetectTZ(D);
+      cb.syms[name] = { ...(cb.syms[name] || { point: cbPointDefault(name) }), gmt: tz ? tz.gmt : 2, dst: tz ? tz.dst : true, tz: tz ? 'auto' : 'fail' };
       cb.data = name; cbSave(); await cbRefreshKeys(); if (!cb.keys.includes(name)) cb.keys.push(name), cb.data = name;
       cb.res = null; renderCB();
       toast(`${name} 1분봉 ${D.t.length.toLocaleString()}개를 불러왔습니다`);
@@ -2334,6 +2338,24 @@
   }
 
   /* ---------- 시간: MT5 서버 시간 → 한국 시간 ---------- */
+  // 매일 생기는 휴장(뉴욕 오후 5시, 골드·나스닥 공통)이 서버 시계로 몇 시에 시작하는지 보고 서버 시간대를 추정
+  function cbDetectTZ(D) {
+    const cnt = { w: {}, s: {} };
+    for (let m = 1; m < D.t.length; m++) {
+      const gap = D.t[m] - D.t[m - 1];
+      if (gap < 30 * 60e3 || gap > 4 * 3600e3) continue;   // 짧은 끊김·주말 제외
+      const start = D.t[m - 1] + 60e3, mod = Math.round((start % 864e5) / 60e3 / 15) * 15 % 1440;
+      const k = isUSDST(start) ? 's' : 'w'; cnt[k][mod] = (cnt[k][mod] || 0) + 1;
+    }
+    const mode = o => { let best = null, n = 0; for (const k in o) if (o[k] > n) { n = o[k]; best = +k; } return n >= 5 ? best : null; };
+    const off = (mod, utcMin) => { let h = Math.round((mod - utcMin) / 60); h = ((h % 24) + 24) % 24; return h > 14 ? h - 24 : h; };
+    const w = mode(cnt.w), sm = mode(cnt.s);
+    const gw = w == null ? null : off(w, 22 * 60), gs = sm == null ? null : off(sm, 21 * 60);   // 뉴욕 17시 = 겨울 UTC 22시, 여름 21시
+    if (gw != null && gs != null) return { gmt: gw, dst: gs === gw + 1 };
+    if (gs != null) return { gmt: gs - 1, dst: true };
+    if (gw != null) return { gmt: gw, dst: true };
+    return null;
+  }
   const usDstCache = {};
   function isUSDST(ms) {
     const d = new Date(ms), y = d.getUTCFullYear();
@@ -2450,7 +2472,7 @@
   function cbSimulate(X, D, ex, sigB, sigS, range) {
     const { B, N, pt } = X, M = D.t.length, trades = [];
     const slPts = num(ex.slPts) || 0, slBuf = num(ex.slBuf) || 0, tpR = num(ex.tpR) || 0, tpPts = num(ex.tpPts) || 0;
-    const maxBars = Math.round(num(ex.maxBars) || 0), cost = num(ex.cost) || 0;
+    const maxBars = Math.round(num(ex.maxBars) || 0);
     for (let i = 1; i < N - 1; i++) {
       const b = sigB ? sigB[i] : 0, sl = sigS ? sigS[i] : 0;
       if (b === sl) continue;   // 신호 없음 또는 양쪽 동시 신호
@@ -2474,7 +2496,7 @@
       }
       if (m >= M) { m = M - 1; exitP = D.c[m]; reason = 'END'; }
       trades.push({ dir: s, entryTime: isoOf(kstOf(D.t[m0], X.meta)), exitTime: isoOf(kstOf(D.t[m], X.meta)), entry: E, exit: exitP,
-        points: Math.round(((exitP - E) * s / pt - cost) * 100) / 100, risk: Math.round(risk / pt * 100) / 100, reason, crossTime: isoOf(kstOf(B.t[i], X.meta)) });
+        points: Math.round((exitP - E) * s / pt * 100) / 100, risk: Math.round(risk / pt * 100) / 100, reason, crossTime: isoOf(kstOf(B.t[i], X.meta)) });
       i = Math.max(i, k - 1);   // 청산한 봉의 마감부터 다음 신호
       if (k >= N - 1) break;
     }
@@ -2548,7 +2570,7 @@
         <select data-cb="role" data-i="${i}" aria-label="역할">${cbOpts(Object.entries(ROLE_KO), c.role)}</select>
         <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
           <div class="cb-params">${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
-            <label>최근 N봉 이내 (0=이번 봉)${cbNum(`data-cb="p" data-k="w" data-i="${i}"`, c.p.w)}</label></div></div>
+            <label>언제까지 인정${`<select data-cb="p" data-k="w" data-i="${i}">${cbOpts([[0, '이번 봉에서만'], [1, '1봉 전까지'], [2, '2봉 전까지'], [3, '3봉 전까지'], [5, '5봉 전까지']], Math.round(num(c.p.w) || 0))}</select>`}</label></div></div>
         <button class="btn sm danger" data-action="cb-del" data-i="${i}" aria-label="조건 삭제">×</button>
       </div>`;
     }).join('');
@@ -2561,11 +2583,18 @@
           <button class="btn sm danger" data-action="cb-data-del">이 데이터 지우기</button>` : ''}
       </div>
       ${cb.data && meta ? `<div class="sub" style="font-size:.76rem;margin:8px 0" id="cbDataInfo">${D ? `${D.t.length.toLocaleString()}개 · ${isoOf(kstOf(D.t[0], meta)).replace('T', ' ')} ~ ${isoOf(kstOf(D.t[D.t.length - 1], meta)).replace('T', ' ')} (한국 시간)` : '불러오는 중…'}</div>
-        <div class="cb-grid">
-          <div class="field"><label>1pt = 가격</label>${cbNum('data-cb="sym" data-k="point"', meta.point)}</div>
-          <div class="field"><label>서버 시간대 (겨울 GMT+)</label>${cbNum('data-cb="sym" data-k="gmt"', meta.gmt)}</div>
-          <div class="field"><label>서머타임</label><select data-cb="sym" data-k="dst">${cbOpts([['1', '미국 서머타임 따름'], ['0', '따르지 않음']], meta.dst ? '1' : '0')}</select></div>
-        </div>
+        ${meta.tz === 'fail' ? `<div class="alert" style="margin-bottom:8px">서버 시간대를 자동으로 찾지 못해 기본값(GMT+2, 미국 서머타임 따름)을 씁니다. 대부분의 브로커가 이 값이에요. 위에 보이는 마지막 봉 시각이 실제 한국 시간과 다르면 아래 '직접 바꾸기'에서 고쳐 주세요.</div>` : ''}
+        <details class="help" style="margin-top:0"${meta.tz === 'fail' ? ' open' : ''}>
+          <summary>자동 설정: 서버 GMT+${meta.gmt}${meta.dst ? ' (여름엔 +' + (num(meta.gmt) + 1) + ')' : ''} → 한국 시간으로 변환 · 1pt = 가격 ${meta.point} 움직임 (직접 바꾸기)</summary>
+          <p>보통은 그대로 두면 됩니다. 서버 시간대는 1분봉 데이터에서 매일 생기는 휴장 시각(뉴욕 오후 5시)으로 자동 계산했어요.</p>
+          <div class="cb-grid" style="margin-top:8px">
+            <div class="field"><label>1pt = 가격 몇 움직임</label>${cbNum('data-cb="sym" data-k="point"', meta.point)}</div>
+            <div class="field"><label>서버 시간대 (겨울 GMT+)</label>${cbNum('data-cb="sym" data-k="gmt"', meta.gmt)}</div>
+            <div class="field"><label>서머타임</label><select data-cb="sym" data-k="dst">${cbOpts([['1', '미국 서머타임 따름'], ['0', '따르지 않음']], meta.dst ? '1' : '0')}</select></div>
+          </div>
+          <ul><li><b>1pt</b>: 손절 pt·익절 pt·"pt 이상" 같은 숫자의 단위예요. 나스닥은 1(지수 1 움직임 = 1pt), 골드는 0.1(가격 $1 움직임 = 10pt)이 기본입니다.</li>
+            <li><b>서버 시간대 확인법</b>: MT5 시장 감시 창 위쪽 시계와 한국 시간을 비교하세요. 지금(미국 서머타임 기간) 한국보다 6시간 늦으면 GMT+2 + 서머타임 따름이에요.</li></ul>
+        </details>
         <div class="cb-sec" style="margin-top:14px">백테스트 기간 (한국 시간, 비우면 전체)</div>
         <div class="cb-grid">
           <div class="field"><label>시작일</label><input type="date" data-cb="per" data-k="from" value="${esc(cb.per.from)}" ${D ? `min="${isoOf(kstOf(D.t[0], meta)).slice(0, 10)}" max="${isoOf(kstOf(D.t[D.t.length - 1], meta)).slice(0, 10)}"` : ''}></div>
@@ -2613,7 +2642,6 @@
         ${ex.ind === 'opp' ? `<div class="field"><label>반대쪽 밴드</label><select data-cb="ex" data-k="indBand">${cbOpts(BAND_OPTS, ex.indBand)}</select></div>` : ''}
         <div class="field"><label>최대 보유 봉 (0=없음)</label>${cbNum('data-cb="ex" data-k="maxBars"', ex.maxBars)}</div>
         <div class="field"><label>당일 청산</label><select data-cb="ex" data-k="dayEnd">${cbOpts([['0', '안 함'], ['1', 'MT5 하루 끝에 청산']], ex.dayEnd ? '1' : '0')}</select></div>
-        <div class="field"><label>비용 (스프레드 등) pt</label>${cbNum('data-cb="ex" data-k="cost"', ex.cost)}</div>
       </div>
       <div class="cb-sec">⑥ 랏 · 금액</div>
       <div class="cb-grid">
@@ -2633,7 +2661,7 @@
           <li>손절·익절은 1분봉으로 판정하고, 같은 1분봉에서 둘 다 닿으면 손절로 봅니다(보수적). 지표 청산은 봉 마감 가격에 나갑니다.</li>
           <li>이평·① 중심선 청산은 진입가가 그 선의 반대편에 있을 때만 작동합니다.</li>
           <li>추가 진입(물타기)과 매물대는 아직 지원하지 않아요. 매물대 대신 <b>최근 N봉 고점·저점 돌파</b>를 쓸 수 있어요.</li>
-          <li>MT5 1분봉에는 스프레드가 없으므로 <b>비용 pt</b>에 평균 스프레드를 넣으면 더 현실적입니다.</li>
+          <li>스프레드는 빼지 않고 계산해요. 실제 매매에서는 그만큼 조금 덜 벌 수 있어요.</li>
         </ul></details>`;
     renderCBRunBtn();
     if (cb.data && !BARS[cb.data]) cbGetData(cb.data).then(d => { if (d && tab === 'bt') renderCB(); });
@@ -2778,7 +2806,7 @@
       case 'cfg': cfg[k] = t.value; break;
       case 'ind': cfg.ind[t.dataset.b][k] = val; break;
       case 'ex': cfg.exit[k] = k === 'dayEnd' ? t.value === '1' : val; break;
-      case 'sym': { const m = cb.syms[cb.data]; if (!m) return; m[k] = k === 'dst' ? t.value === '1' : val; break; }
+      case 'sym': { const m = cb.syms[cb.data]; if (!m) return; m[k] = k === 'dst' ? t.value === '1' : val; if (k === 'gmt' || k === 'dst') m.tz = 'manual'; break; }
       case 'per': cb.per[k] = t.value; break;
       case 'mm': cb.mm[k] = t.tagName === 'SELECT' ? t.value : val; break;
       default: return;

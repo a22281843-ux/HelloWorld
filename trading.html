@@ -226,6 +226,28 @@
     /* Backtest */
     .bt-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
     .bt-row + .bt-row { margin-top: 6px; }
+    /* 조건 백테스트 */
+    .cb-sec { font-size: .8rem; font-weight: 800; color: var(--sub); margin: 18px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .cb-sec:first-child { margin-top: 0; }
+    .cb-cond { display: grid; grid-template-columns: 86px 1fr auto; gap: 8px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+    .cb-cond + .cb-cond { margin-top: 6px; }
+    .cb-cond.off { opacity: .5; }
+    .cb-cond.opt { border-style: dashed; border-color: rgba(129,140,248,.5); }
+    .cb-cond select, .cb-cond input { padding: 7px 9px; font-size: 14px; }
+    .cb-cond .cb-name { font-weight: 700; font-size: .9rem; }
+    .cb-cond .cb-name .lt { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+    .cb-cond .cb-txt { font-size: .76rem; color: var(--sub); margin-top: 2px; }
+    .cb-params { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; }
+    .cb-params label { display: flex; flex-direction: column; gap: 3px; font-size: .7rem; color: var(--muted); font-weight: 600; }
+    .cb-params input { width: 76px; font-family: var(--mono); }
+    .cb-params select { width: auto; max-width: 100%; }
+    .cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    .cb-grid .field select, .cb-grid .field input { padding: 8px 10px; font-size: 15px; }
+    .cb-res tbody tr { cursor: pointer; }
+    .cb-res tbody tr.on td { background: var(--accent-bg); }
+    .cb-res td.lbl-c { text-align: left; white-space: normal; min-width: 130px; }
+    .cb-few { color: var(--muted); font-size: .7rem; display: block; }
+    @media (max-width: 560px) { .cb-cond { grid-template-columns: 1fr auto; } .cb-cond > select { grid-column: 1 / -1; grid-row: 2; } }
     .bt-row.sel { border-color: rgba(129,140,248,.6); background: var(--accent-bg); }
     .bt-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
     .bt-row .bt-name { font-weight: 700; font-size: .9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -455,6 +477,17 @@
 
     <!-- ===== 백테스트 ===== -->
     <section class="view" id="view-bt" hidden>
+      <div class="card" id="cbCard">
+        <h2>조건 백테스트 <span class="hint">전략 조건을 골라 1분봉으로 바로 검증</span></h2>
+        <div id="cbRoot"></div>
+        <input type="file" id="cbFile" accept=".csv,.txt,text/csv" hidden>
+      </div>
+
+      <div class="card" id="cbResCard" hidden>
+        <h2><span>조건 조합 결과</span><span class="hint" id="cbResHint"></span></h2>
+        <div id="cbRes"></div>
+      </div>
+
       <div class="card">
         <h2>백테스트 결과 가져오기</h2>
         <div class="btn-row">
@@ -641,7 +674,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.8.1';
+  const APP_VERSION = 'v1.9.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -1811,7 +1844,8 @@
   async function importMT5File(f) {
     try {
       const text = await f.text();
-      if (isBacktestCSV(text)) importBacktest(text); else importMT5(text);
+      if (/^\uFEFF?<?DATE>?[,\t;]<?TIME>?[,\t;]<?OPEN/i.test(text)) { setTab('bt'); cbImportFile(f); }
+      else if (isBacktestCSV(text)) importBacktest(text); else importMT5(text);
     } catch (err) { toast('⚠ ' + err.message, 4000); }
   }
 
@@ -1935,6 +1969,9 @@
     return { meta, trades };
   }
 
+  const srcShort = r => ({ tester: '테스터', app: '조건' }[r.source] || '빠른');
+  const runTag = r => r.source === 'app' ? `${r.symbol} ${r.tf} · ${r.combo || ''}` : `${r.symbol} ${r.tf} SL${+r.sl}/TP${+r.tp}`;
+
   function runName(r) {
     return `${r.symbol} ${r.tf} · SL ${+r.sl} / TP ${+r.tp} · ${(r.from || '').slice(0, 10)} ~ ${(r.to || '').slice(0, 10)}`;
   }
@@ -2008,9 +2045,10 @@
 
   function runStats(r) {
     const tr = [...r.trades].sort((a, b) => new Date(a.exitTime) - new Date(b.exitTime));
-    const st = seriesStats(tr.map(t => t.points), tr.map(t => r.sl ? t.points / r.sl : null), monthsBetween(r.from, r.to));
+    const rOf = t => t.risk ? t.points / t.risk : (r.sl ? t.points / r.sl : null);
+    const st = seriesStats(tr.map(t => t.points), tr.map(rOf), monthsBetween(r.from, r.to));
     st.profit = tr.some(t => t.profit != null) ? tr.reduce((a, t) => a + (t.profit || 0), 0) : null;
-    st.curveR = cumulative(tr.map(t => r.sl ? t.points / r.sl : 0));
+    st.curveR = cumulative(tr.map(t => rOf(t) || 0));
     return st;
   }
 
@@ -2033,6 +2071,7 @@
   const cumulative = arr => { let c = 0; return [0, ...arr.map(v => (c += v))]; };
 
   function renderBT() {
+    renderCB(); renderCBRes();
     renderBTList();
     const sel = $('#btSetup'), cur = sel.value;
     sel.innerHTML = S.settings.setups.map(x => `<option>${esc(x)}</option>`).join('');
@@ -2051,7 +2090,7 @@
         <input type="checkbox" data-action="bt-sel" data-id="${esc(r.id)}" ${on ? 'checked' : ''} aria-label="비교에 넣기">
         <div class="bt-name" title="${esc(r.name)}">${esc(r.name)}</div>
         <div class="bt-acts">
-          <span class="tag">${r.source === 'tester' ? '전략테스터' : '빠른 검증'}</span>
+          <span class="tag">${{ tester: '전략테스터', app: '조건 백테스트' }[r.source] || '빠른 검증'}</span>
           <button class="btn sm" data-action="bt-view" data-id="${esc(r.id)}">거래</button>
           <button class="btn sm danger" data-action="bt-del" data-id="${esc(r.id)}">삭제</button>
         </div>
@@ -2068,7 +2107,7 @@
     const from = same && base ? base.from : null, to = same && base ? base.to : null;
     const real = setup ? realTrades(setup, base ? base.symbol : null, from, to) : [];
     const rs = realStats(real, from, to);
-    const cols = runs.map((r, i) => ({ label: `${String.fromCharCode(65 + i)} · ${r.source === 'tester' ? '테스터' : '빠른'}`, sub: `${r.symbol} ${r.tf} SL${+r.sl}/TP${+r.tp}`, st: runStats(r), unit: 'pt', color: BT_COLORS[i] }));
+    const cols = runs.map((r, i) => ({ label: `${String.fromCharCode(65 + i)} · ${srcShort(r)}`, sub: runTag(r), st: runStats(r), unit: 'pt', color: BT_COLORS[i] }));
     cols.push({ label: '실전', sub: setup ? `${setup}${base ? ' · ' + (mapSymbol(base.symbol.replace(/\s*\(예제\)$/, '')) || base.symbol) : ''}` : '셋업 없음', st: rs, unit: '$', color: '#e2e8f0', real: true });
     const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
     const rows = [
@@ -2130,7 +2169,7 @@
     const tm = s => (s || '').replace('T', ' ').slice(2);
     $('#btDetail').innerHTML = `<table class="bd"><thead><tr><th>#</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>pt</th>${r.trades.some(t => t.profit != null) ? '<th>손익</th>' : ''}</tr></thead><tbody>${
       r.trades.map((t, i) => `<tr><td>${i + 1}</td><td>${tm(t.entryTime)}</td><td>${tm(t.exitTime)}</td><td><span class="badge ${t.dir === -1 ? 'S' : 'L'}">${t.dir === -1 ? '매도' : '매수'}</span></td>
-        <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_KO[t.reason] || esc(t.reason)}</td><td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td>${t.profit != null ? `<td class="${cls(t.profit)}">${money(t.profit)}</td>` : (r.trades.some(x => x.profit != null) ? '<td></td>' : '')}</tr>`).join('')
+        <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_ALL[t.reason] || esc(t.reason)}</td><td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td>${t.profit != null ? `<td class="${cls(t.profit)}">${money(t.profit)}</td>` : (r.trades.some(x => x.profit != null) ? '<td></td>' : '')}</tr>`).join('')
     }</tbody></table>`;
   }
 
@@ -2151,6 +2190,546 @@
       $('#toolFrame').srcdoc = html;
     }
     $('#toolCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* =========================================================
+     조건 백테스트: 1분봉 CSV + 조건 블록을 골라 앱 안에서 검증
+     - 신호봉 마감 → 다음 봉 시가 진입, 한 번에 한 포지션
+     - 손절·익절은 1분봉으로 판정 (같은 1분봉에서 둘 다 닿으면 손절)
+     - '비교' 조건은 넣고/빼는 모든 조합을 돌려 성과를 나란히 보여 줌
+     ========================================================= */
+  const CB_KEY = 'tradedesk.cb';
+  const CB_TFS = [['M5', 5], ['M15', 15], ['M30', 30], ['H1', 60], ['H4', 240]];
+  const CB_MAX_OPT = 6;
+  const SRC_OPTS = [['close', '종가'], ['open', '시가'], ['high', '고가'], ['low', '저가']];
+  const BAND_OPTS = [['any', '①② 중 하나라도'], ['both', '①② 둘 다'], ['b1', '①만'], ['b2', '②만']];
+  const BAND_KO = Object.fromEntries(BAND_OPTS);
+  const ROLE_KO = { req: '필수', opt: '비교', off: '끔' };
+  // 조건은 매수 기준으로 정의, 매도는 위아래를 뒤집어 적용
+  const CB_CONDS = {
+    ma: { name: '이평 방향', params: [
+        { k: 'mode', label: '기준', opts: [['with', '진입 방향과 같음'], ['against', '진입 방향과 반대']], def: 'with' },
+        { k: 'look', label: '몇 봉 전과 비교', def: 3 }],
+      text: p => p.mode === 'against' ? `매수: 이평이 내려가는 중 / 매도: 올라가는 중 (${p.look}봉 전과 비교)` : `매수: 이평 상승 / 매도: 이평 하락 (${p.look}봉 전과 비교)` },
+    touch: { name: '밴드 찌름', params: [
+        { k: 'band', label: '밴드', opts: BAND_OPTS, def: 'any' },
+        { k: 'side', label: '방향', opts: [['rev', '매수=하단 · 매도=상단'], ['brk', '매수=상단 · 매도=하단 (돌파)']], def: 'rev' }],
+      text: p => `${p.side === 'brk' ? '매수: 상단 / 매도: 하단' : '매수: 하단 / 매도: 상단'}을 ${BAND_KO[p.band]} 찌름` },
+    inside: { name: '밴드 안 마감', params: [{ k: 'band', label: '밴드', opts: BAND_OPTS, def: 'both' }],
+      text: p => `매수: 하단선 위 / 매도: 상단선 아래에서 마감 (${BAND_KO[p.band]})` },
+    candle: { name: '캔들 색', params: [], text: () => '매수: 양봉 / 매도: 음봉' },
+    nowick: { name: '꼬리 없는 봉', params: [{ k: 'pct', label: '꼬리 ≤ 봉 길이 %', def: 10 }],
+      text: p => `매수: 아랫꼬리 / 매도: 윗꼬리가 봉 길이의 ${p.pct}% 이하` },
+    longwick: { name: '긴 꼬리', params: [{ k: 'pct', label: '꼬리 ≥ 봉 길이 %', def: 40 }],
+      text: p => `매수: 아랫꼬리 / 매도: 윗꼬리가 봉 길이의 ${p.pct}% 이상` },
+    hold: { name: '저점(고점) 지킴', params: [], text: () => '매수: 저가가 직전 봉 저가 이상 / 매도: 고가가 직전 봉 고가 이하' },
+    turn: { name: '밴드 기울기 멈춤', params: [{ k: 'line', label: '선', opts: [['b1o', '① 바깥선'], ['mid', '① 중심선'], ['b2o', '② 바깥선']], def: 'b1o' }],
+      text: p => `매수: ${p.line === 'mid' ? '① 중심선' : p.line === 'b2o' ? '② 하단선' : '① 하단선'}이 더 내려가지 않음 / 매도: ${p.line === 'mid' ? '중심선' : '상단선'}이 더 올라가지 않음` },
+    daybrk: { name: '당일 고점·저점 돌파', params: [], text: () => '매수: 당일 고점 위로 / 매도: 당일 저점 아래로 (MT5 일봉 기준)' },
+    nbrk: { name: '최근 N봉 고점·저점 돌파', params: [{ k: 'n', label: 'N봉', def: 20 }],
+      text: p => `매수: 종가가 직전 ${p.n}봉 최고가 위 / 매도: 최저가 아래 (매물대 이탈 대용)` },
+    move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
+      text: p => `직전 ${p.n}봉 동안 ${p.pts}pt 이상 반대로 움직임 (매수: 하락 뒤 / 매도: 상승 뒤)` },
+    time: { name: '시간대 (한국 시간)', params: [{ k: 'from', label: '시작 시', def: 16 }, { k: 'to', label: '끝 시', def: 2 }],
+      text: p => `한국 시간 ${p.from}시 ~ ${p.to}시 사이 신호만` },
+  };
+  const REASON_ALL = { ...REASON_KO, IND: '지표 청산', TIME: '보유 봉 초과', DAY: '당일 청산' };
+
+  function cbDefaultCfg() {
+    return { dir: 'both', tf: 'H1',
+      ind: { b1: { n: 20, k: 2, src: 'close' }, b2: { n: 4, k: 4, src: 'open' }, ma: { n: 20, src: 'close' } },
+      conds: [],
+      exit: { sl: 'fixed', slPts: 50, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0 } };
+  }
+  function cbNorm(c) {
+    const d = cbDefaultCfg(); c = c && typeof c === 'object' ? c : {};
+    const ind = c.ind || {};
+    return { dir: ['buy', 'sell', 'both'].includes(c.dir) ? c.dir : d.dir, tf: CB_TFS.some(x => x[0] === c.tf) ? c.tf : d.tf,
+      ind: { b1: { ...d.ind.b1, ...(ind.b1 || {}) }, b2: { ...d.ind.b2, ...(ind.b2 || {}) }, ma: { ...d.ind.ma, ...(ind.ma || {}) } },
+      conds: (Array.isArray(c.conds) ? c.conds : []).filter(x => x && CB_CONDS[x.type]).map(x => cbNewCond(x.type, x)),
+      exit: { ...d.exit, ...(c.exit || {}) } };
+  }
+  function cbNewCond(type, o = {}) {
+    const p = { w: 0 };
+    for (const q of CB_CONDS[type].params) p[q.k] = q.def;
+    return { id: o.id || uid(), type, role: ROLE_KO[o.role] ? o.role : 'req', p: { ...p, ...(o.p || {}) } };
+  }
+  const cb = (() => {
+    let d = {}; try { d = JSON.parse(localStorage.getItem(CB_KEY)) || {}; } catch (e) {}
+    return { stId: d.stId || '', cfg: cbNorm(d.cfg), data: d.data || '', syms: d.syms || {}, keys: [], res: null, pick: 0, busy: false };
+  })();
+  const cbSave = () => { try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms })); } catch (e) {} };
+
+  /* ---------- 1분봉 저장소 (IndexedDB, 백업에는 넣지 않음) ---------- */
+  let barsDBp = null;
+  const BARS = {};
+  function barsReq(mode, fn) {
+    if (!barsDBp) barsDBp = new Promise(res => {
+      try { const rq = indexedDB.open('tradedesk-bars', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('m1'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); }
+      catch (e) { res(null); }
+    });
+    return barsDBp.then(db => db ? new Promise((res, rej) => {
+      const tx = db.transaction('m1', mode), r = fn(tx.objectStore('m1'));
+      tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    }) : Promise.reject(new Error('IndexedDB 사용 불가')));
+  }
+  async function cbGetData(name) {
+    if (!name) return null;
+    if (BARS[name]) return BARS[name];
+    try { const d = await barsReq('readonly', st => st.get(name)); if (d) BARS[name] = d; return d || null; } catch (e) { return null; }
+  }
+  async function cbRefreshKeys() {
+    try { cb.keys = (await barsReq('readonly', st => st.getAllKeys())) || []; } catch (e) { cb.keys = Object.keys(BARS); }
+    if (!cb.keys.includes(cb.data)) cb.data = cb.keys[0] || '';
+  }
+
+  // DATE,TIME,OPEN,HIGH,LOW,CLOSE (ExportM1Bars) · MT5 내보내기(탭 구분) · "날짜 시간",O,H,L,C 모두 허용
+  function parseM1(text) {
+    const rows = text.replace(/^﻿/, '').split(/\r?\n/);
+    const t = new Float64Array(rows.length), o = new Float64Array(rows.length), h = new Float64Array(rows.length), l = new Float64Array(rows.length), c = new Float64Array(rows.length);
+    let n = 0;
+    for (const raw of rows) {
+      const f = raw.trim().replace(/[<>"]/g, '').split(/[,\t;]/);
+      if (f.length < 5) continue;
+      const dm = f[0].match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+      if (!dm) continue;
+      let hh, mm, k;
+      if (dm[4] != null) { hh = +dm[4]; mm = +dm[5]; k = 1; }
+      else { const tm = (f[1] || '').match(/^(\d{1,2}):(\d{2})/); if (!tm) continue; hh = +tm[1]; mm = +tm[2]; k = 2; }
+      const ts = Date.UTC(+dm[1], +dm[2] - 1, +dm[3], hh, mm), vo = +f[k], vh = +f[k + 1], vl = +f[k + 2], vc = +f[k + 3];
+      if (!isFinite(ts) || !isFinite(vo + vh + vl + vc) || vh < vl) continue;
+      t[n] = ts; o[n] = vo; h[n] = vh; l[n] = vl; c[n] = vc; n++;
+    }
+    if (n < 100) throw new Error('1분봉을 읽지 못했습니다. ExportM1Bars로 만든 CSV인지 확인하세요');
+    const out = { t: t.slice(0, n), o: o.slice(0, n), h: h.slice(0, n), l: l.slice(0, n), c: c.slice(0, n) };
+    if (out.t[0] > out.t[n - 1]) for (const k of 't o h l c'.split(' ')) out[k].reverse();
+    return out;
+  }
+  async function cbImportFile(f) {
+    try {
+      const D = parseM1(await f.text());
+      const guess = (f.name.match(/^([A-Za-z0-9.#]+?)(?:[_\- ]M1|[_\- ]|\.)/) || [])[1] || 'DATA';
+      const name = guess.toUpperCase();
+      D.name = name; D.file = f.name;
+      BARS[name] = D;
+      try { await barsReq('readwrite', st => st.put(D, name)); } catch (e) { toast('⚠ 브라우저 저장이 안 돼서 이번 창에서만 쓸 수 있어요', 3500); }
+      if (!cb.syms[name]) cb.syms[name] = { point: /XAU|GOLD/.test(name) ? 0.1 : 1, gmt: 2, dst: true };
+      cb.data = name; cbSave(); await cbRefreshKeys(); if (!cb.keys.includes(name)) cb.keys.push(name), cb.data = name;
+      cb.res = null; renderCB();
+      toast(`${name} 1분봉 ${D.t.length.toLocaleString()}개를 불러왔습니다`);
+    } catch (err) { toast('⚠ ' + err.message, 4000); }
+  }
+
+  /* ---------- 시간: MT5 서버 시간 → 한국 시간 ---------- */
+  const usDstCache = {};
+  function isUSDST(ms) {
+    const d = new Date(ms), y = d.getUTCFullYear();
+    if (!usDstCache[y]) {
+      const sun = (m, nth) => { const first = new Date(Date.UTC(y, m, 1)).getUTCDay(); return Date.UTC(y, m, 1 + ((7 - first) % 7) + 7 * (nth - 1)); };
+      usDstCache[y] = [sun(2, 2), sun(10, 1)];
+    }
+    return ms >= usDstCache[y][0] && ms < usDstCache[y][1];
+  }
+  function kstOf(ms, m) { return ms + (9 - (num(m.gmt) ?? 2) - (m.dst && isUSDST(ms) ? 1 : 0)) * 3600e3; }
+  const isoOf = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+  const dayOf = ms => Math.floor(ms / 864e5);
+
+  /* ---------- 시간봉 만들기 · 지표 ---------- */
+  function cbBars(D, tfMin) {
+    const ms = tfMin * 60e3, N = D.t.length, B = { t: [], o: [], h: [], l: [], c: [], s: [], e: [] };
+    let cur = -1;
+    for (let m = 0; m < N; m++) {
+      const b = Math.floor(D.t[m] / ms) * ms;
+      if (b !== cur) { cur = b; B.t.push(b); B.o.push(D.o[m]); B.h.push(D.h[m]); B.l.push(D.l[m]); B.c.push(D.c[m]); B.s.push(m); B.e.push(m); }
+      else { const k = B.t.length - 1; if (D.h[m] > B.h[k]) B.h[k] = D.h[m]; if (D.l[m] < B.l[k]) B.l[k] = D.l[m]; B.c[k] = D.c[m]; B.e[k] = m; }
+    }
+    return B;
+  }
+  function sma(a, n) {
+    const r = new Float64Array(a.length).fill(NaN); let s = 0;
+    for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) r[i] = s / n; }
+    return r;
+  }
+  // MT5 볼린저와 같은 모표준편차
+  function bands(a, n, k) {
+    const m = sma(a, n), u = new Float64Array(a.length).fill(NaN), l = new Float64Array(a.length).fill(NaN);
+    for (let i = n - 1; i < a.length; i++) {
+      let v = 0; for (let j = i - n + 1; j <= i; j++) v += (a[j] - m[i]) ** 2;
+      const sd = Math.sqrt(v / n); u[i] = m[i] + k * sd; l[i] = m[i] - k * sd;
+    }
+    return { m, u, l };
+  }
+  function cbContext(D, cfg, meta) {
+    const tfMin = (CB_TFS.find(x => x[0] === cfg.tf) || CB_TFS[3])[1];
+    const B = cbBars(D, tfMin), N = B.t.length;
+    const src = s => B[{ close: 'c', open: 'o', high: 'h', low: 'l' }[s] || 'c'];
+    const pi = (v, d) => Math.max(1, Math.round(num(v) ?? d));
+    const { b1, b2, ma } = cfg.ind;
+    const dayHi = new Float64Array(N).fill(NaN), dayLo = new Float64Array(N).fill(NaN), kstH = new Uint8Array(N);
+    let hi = -Infinity, lo = Infinity;
+    for (let i = 0; i < N; i++) {
+      if (i && dayOf(B.t[i]) !== dayOf(B.t[i - 1])) { hi = -Infinity; lo = Infinity; }
+      if (hi > -Infinity) { dayHi[i] = hi; dayLo[i] = lo; }
+      hi = Math.max(hi, B.h[i]); lo = Math.min(lo, B.l[i]);
+      kstH[i] = new Date(kstOf(B.t[i], meta)).getUTCHours();
+    }
+    return { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
+      b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: sma(src(ma.src), pi(ma.n, 20)) };
+  }
+  function bandTest(X, mode, fn) {
+    return mode === 'both' ? fn(X.b1) && fn(X.b2) : mode === 'b1' ? fn(X.b1) : mode === 'b2' ? fn(X.b2) : fn(X.b1) || fn(X.b2);
+  }
+  function condAt(X, c, i, s) {
+    const { B } = X, p = c.p, buy = s > 0, o = B.o[i], h = B.h[i], l = B.l[i], cl = B.c[i];
+    switch (c.type) {
+      case 'ma': {
+        const j = i - Math.max(1, Math.round(num(p.look) ?? 3)); if (j < 0) return false;
+        const d = X.ma[i] - X.ma[j]; if (!(d === d)) return false;
+        return (p.mode === 'against') !== buy ? d > 0 : d < 0;
+      }
+      case 'touch': { const up = p.side === 'brk' ? buy : !buy; return bandTest(X, p.band, b => up ? h >= b.u[i] : l <= b.l[i]); }
+      case 'inside': return bandTest(X, p.band, b => buy ? cl > b.l[i] : cl < b.u[i]);
+      case 'candle': return buy ? cl > o : cl < o;
+      case 'nowick': case 'longwick': {
+        const rng = h - l; if (!(rng > 0)) return false;
+        const w = buy ? Math.min(o, cl) - l : h - Math.max(o, cl), lim = rng * (num(p.pct) ?? 0) / 100;
+        return c.type === 'nowick' ? w <= lim : w >= lim;
+      }
+      case 'hold': return i > 0 && (buy ? l >= B.l[i - 1] : h <= B.h[i - 1]);
+      case 'turn': {
+        if (i < 1) return false;
+        const a = p.line === 'mid' ? X.b1.m : p.line === 'b2o' ? (buy ? X.b2.l : X.b2.u) : (buy ? X.b1.l : X.b1.u);
+        return buy ? a[i] >= a[i - 1] : a[i] <= a[i - 1];
+      }
+      case 'daybrk': return buy ? h > X.dayHi[i] : l < X.dayLo[i];
+      case 'nbrk': case 'move': {
+        const n = Math.max(1, Math.round(num(p.n) ?? 20)); if (i < n) return false;
+        let mx = -Infinity, mn = Infinity;
+        for (let j = i - n; j < (c.type === 'nbrk' ? i : i + 1); j++) { if (B.h[j] > mx) mx = B.h[j]; if (B.l[j] < mn) mn = B.l[j]; }
+        if (c.type === 'nbrk') return buy ? cl > mx : cl < mn;
+        return (buy ? mx - l : h - mn) / X.pt >= (num(p.pts) ?? 0);
+      }
+      case 'time': {
+        const hr = X.kstH[i], f = Math.round(num(p.from) ?? 0), t = Math.round(num(p.to) ?? 24);
+        return f <= t ? hr >= f && hr < t : hr >= f || hr < t;
+      }
+    }
+    return false;
+  }
+  // 조건 하나의 봉별 결과 (최근 w봉 이내 한 번이라도 맞으면 참)
+  function condArray(X, c, s) {
+    const a = new Uint8Array(X.N);
+    for (let i = 0; i < X.N; i++) a[i] = condAt(X, c, i, s) ? 1 : 0;
+    const w = Math.max(0, Math.round(num(c.p.w) || 0));
+    if (!w) return a;
+    const out = new Uint8Array(X.N); let last = -Infinity;
+    for (let i = 0; i < X.N; i++) { if (a[i]) last = i; out[i] = i - last <= w ? 1 : 0; }
+    return out;
+  }
+  function indExit(X, ex, k, s, E) {
+    const { B } = X;
+    if (ex.ind === 'opp') return bandTest(X, ex.indBand, b => s > 0 ? B.h[k] >= b.u[k] : B.l[k] <= b.l[k]);
+    if (ex.ind === 'mid') return s > 0 ? B.h[k] >= X.b1.m[k] && E < X.b1.m[k] : B.l[k] <= X.b1.m[k] && E > X.b1.m[k];
+    if (ex.ind === 'ma') return s > 0 ? B.h[k] >= X.ma[k] && E < X.ma[k] : B.l[k] <= X.ma[k] && E > X.ma[k];
+    return false;
+  }
+
+  function cbSimulate(X, D, ex, sigB, sigS) {
+    const { B, N, pt } = X, M = D.t.length, trades = [];
+    const slPts = num(ex.slPts) || 0, slBuf = num(ex.slBuf) || 0, tpR = num(ex.tpR) || 0, tpPts = num(ex.tpPts) || 0;
+    const maxBars = Math.round(num(ex.maxBars) || 0), cost = num(ex.cost) || 0;
+    for (let i = 1; i < N - 1; i++) {
+      const b = sigB ? sigB[i] : 0, sl = sigS ? sigS[i] : 0;
+      if (b === sl) continue;   // 신호 없음 또는 양쪽 동시 신호
+      const s = b ? 1 : -1, j = i + 1, m0 = B.s[j], E = D.o[m0];
+      const slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : E - s * slPts * pt;
+      const risk = (E - slP) * s;
+      if (!(risk > 0)) continue;
+      const tpP = ex.tp === 'r' && tpR > 0 ? E + s * risk * tpR : ex.tp === 'fixed' && tpPts > 0 ? E + s * tpPts * pt : NaN;
+      let k = j, m = m0, exitP = NaN, reason = 'END';
+      for (; m < M; m++) {
+        const o = D.o[m], h = D.h[m], l = D.l[m];
+        if (s > 0 ? l <= slP : h >= slP) { exitP = s > 0 ? Math.min(o, slP) : Math.max(o, slP); reason = 'SL'; break; }
+        if (tpP === tpP && (s > 0 ? h >= tpP : l <= tpP)) { exitP = s > 0 ? Math.max(o, tpP) : Math.min(o, tpP); reason = 'TP'; break; }
+        if (ex.dayEnd && m + 1 < M && dayOf(D.t[m + 1]) !== dayOf(D.t[m])) { exitP = D.c[m]; reason = 'DAY'; break; }
+        if (m === B.e[k]) {
+          if (ex.ind !== 'none' && indExit(X, ex, k, s, E)) { exitP = B.c[k]; reason = 'IND'; break; }
+          if (maxBars > 0 && k - j + 1 >= maxBars) { exitP = B.c[k]; reason = 'TIME'; break; }
+          k++;
+        }
+      }
+      if (m >= M) { m = M - 1; exitP = D.c[m]; reason = 'END'; }
+      trades.push({ dir: s, entryTime: isoOf(kstOf(D.t[m0], X.meta)), exitTime: isoOf(kstOf(D.t[m], X.meta)), entry: E, exit: exitP,
+        points: Math.round(((exitP - E) * s / pt - cost) * 100) / 100, risk: Math.round(risk / pt * 100) / 100, reason, crossTime: isoOf(kstOf(B.t[i], X.meta)) });
+      i = Math.max(i, k - 1);   // 청산한 봉의 마감부터 다음 신호
+      if (k >= N - 1) break;
+    }
+    return trades;
+  }
+
+  async function cbRun() {
+    const cfg = cb.cfg, D = await cbGetData(cb.data);
+    if (!D) { toast('먼저 1분봉 CSV를 불러오세요', 3000); return; }
+    const req = cfg.conds.filter(c => c.role === 'req'), opt = cfg.conds.filter(c => c.role === 'opt');
+    if (!req.length && !opt.length) { toast('조건을 하나 이상 추가하세요'); return; }
+    if (opt.length > CB_MAX_OPT) { toast(`비교 조건은 ${CB_MAX_OPT}개까지 가능합니다 (${2 ** CB_MAX_OPT}개 조합)`, 3500); return; }
+    if (cfg.exit.sl === 'fixed' && !(num(cfg.exit.slPts) > 0)) { toast('손절 pt를 입력하세요'); return; }
+    cb.busy = true; renderCBRunBtn();
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const meta = cb.syms[cb.data] || { point: 1, gmt: 2, dst: true };
+      const X = cbContext(D, cfg, meta);
+      const sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
+      const arr = new Map();
+      for (const c of [...req, ...opt]) arr.set(c.id, { 1: sides.includes(1) ? condArray(X, c, 1) : null, '-1': sides.includes(-1) ? condArray(X, c, -1) : null });
+      const and = (set, s) => {
+        if (!sides.includes(s)) return null;
+        const out = new Uint8Array(X.N).fill(1);
+        for (const c of set) { const a = arr.get(c.id)[s]; for (let i = 0; i < X.N; i++) out[i] &= a[i]; }
+        return out;
+      };
+      const from = isoOf(kstOf(D.t[0], meta)), to = isoOf(kstOf(D.t[D.t.length - 1], meta)), months = monthsBetween(from, to);
+      const res = [];
+      for (let mask = 0; mask < 2 ** opt.length; mask++) {
+        const set = [...req, ...opt.filter((_, b) => mask & (1 << b))];
+        if (!set.length) continue;
+        const trades = cbSimulate(X, D, cfg.exit, and(set, 1), and(set, -1));
+        const st = seriesStats(trades.map(t => t.points), trades.map(t => t.points / t.risk), months);
+        st.curveR = cumulative(trades.map(t => t.points / t.risk));
+        st.avgRisk = trades.length ? trades.reduce((a, t) => a + t.risk, 0) / trades.length : null;
+        res.push({ mask, letters: opt.map((_, b) => mask & (1 << b) ? String.fromCharCode(65 + b) : '').join(''), trades, st });
+      }
+      res.sort((a, b) => (a.mask === 0 ? -1 : b.mask === 0 ? 1 : 0) || ((b.st.n >= 10) - (a.st.n >= 10)) || ((b.st.expR ?? -99) - (a.st.expR ?? -99)));
+      cb.res = { res, opt: opt.map(c => ({ ...c })), req: req.map(c => ({ ...c })), cfg: clone(cfg), name: cb.data, from, to, bars: X.N, meta: { ...meta } };
+      cb.pick = res.length > 1 && res[0].mask === 0 ? 1 : 0;
+    } catch (err) { toast('⚠ 계산 중 오류: ' + err.message, 4000); }
+    cb.busy = false; renderCB(); renderCBRes();
+    if (cb.res) $('#cbResCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* ---------- 화면 ---------- */
+  const cbOpts = (opts, v) => opts.map(([k, l]) => `<option value="${k}" ${String(v) === String(k) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  const cbNum = (attr, v, w = '') => `<input type="number" step="any" class="num-in" ${attr} value="${esc(v ?? '')}" ${w}>`;
+  function cbCondText(c) { return CB_CONDS[c.type].text(c.p) + (num(c.p.w) > 0 ? ` · 최근 ${c.p.w}봉 이내` : ''); }
+  function cbSummary(cfg) {
+    const dirKo = { buy: '매수만', sell: '매도만', both: '매수·매도' }[cfg.dir];
+    const on = cfg.conds.filter(c => c.role !== 'off');
+    return `${dirKo} · ${cfg.tf}` + (on.length ? '\n' + on.map(c => `- [${ROLE_KO[c.role]}] ${CB_CONDS[c.type].name}: ${cbCondText(c)}`).join('\n') : '\n(조건 없음)');
+  }
+
+  function renderCB() {
+    const root = $('#cbRoot'); if (!root) return;
+    const cfg = cb.cfg, ex = cfg.exit, meta = cb.syms[cb.data], D = BARS[cb.data];
+    const optN = cfg.conds.filter(c => c.role === 'opt').length;
+    let optIdx = 0;
+    const condRows = cfg.conds.map((c, i) => {
+      const def = CB_CONDS[c.type], lt = c.role === 'opt' ? String.fromCharCode(65 + optIdx++) : '';
+      return `<div class="cb-cond ${c.role}">
+        <select data-cb="role" data-i="${i}" aria-label="역할">${cbOpts(Object.entries(ROLE_KO), c.role)}</select>
+        <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
+          <div class="cb-params">${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
+            <label>최근 N봉 이내 (0=이번 봉)${cbNum(`data-cb="p" data-k="w" data-i="${i}"`, c.p.w)}</label></div></div>
+        <button class="btn sm danger" data-action="cb-del" data-i="${i}" aria-label="조건 삭제">×</button>
+      </div>`;
+    }).join('');
+    const st = cb.stId && findSt(cb.stId);
+    root.innerHTML = `
+      <div class="cb-sec">① 데이터 (MT5 1분봉 CSV)</div>
+      <div class="btn-row" style="align-items:center">
+        <button class="btn sm primary" data-action="cb-file">⬆ 1분봉 CSV 열기</button>
+        ${cb.keys.length ? `<select id="cbData" style="width:auto">${cbOpts(cb.keys.map(k => [k, k]), cb.data)}</select>
+          <button class="btn sm danger" data-action="cb-data-del">이 데이터 지우기</button>` : ''}
+      </div>
+      ${cb.data && meta ? `<div class="sub" style="font-size:.76rem;margin:8px 0" id="cbDataInfo">${D ? `${D.t.length.toLocaleString()}개 · ${isoOf(kstOf(D.t[0], meta)).replace('T', ' ')} ~ ${isoOf(kstOf(D.t[D.t.length - 1], meta)).replace('T', ' ')} (한국 시간)` : '불러오는 중…'}</div>
+        <div class="cb-grid">
+          <div class="field"><label>1pt = 가격</label>${cbNum('data-cb="sym" data-k="point"', meta.point)}</div>
+          <div class="field"><label>서버 시간대 (겨울 GMT+)</label>${cbNum('data-cb="sym" data-k="gmt"', meta.gmt)}</div>
+          <div class="field"><label>서머타임</label><select data-cb="sym" data-k="dst">${cbOpts([['1', '미국 서머타임 따름'], ['0', '따르지 않음']], meta.dst ? '1' : '0')}</select></div>
+        </div>`
+        : `<div class="sub" style="font-size:.78rem;margin-top:8px">MT5에서 <b>ExportM1Bars</b> 스크립트를 차트에 끌어다 놓으면 <code>MQL5\\Files</code>에 1분봉 CSV가 생깁니다. 한 번 불러오면 이 브라우저에 저장돼요.</div>`}
+
+      <div class="cb-sec"><span>② 전략 카드</span>
+        <span class="btn-row"><button class="btn sm" data-action="cb-copy">조건 복사</button><button class="btn sm" data-action="cb-paste">조건 붙여넣기</button></span></div>
+      <div class="btn-row" style="align-items:center">
+        <select id="cbSt" style="width:auto;max-width:100%"><option value="">— 전략 카드 연결 안 함 —</option>${S.strategies.map(x => `<option value="${x.id}" ${x.id === cb.stId ? 'selected' : ''}>${esc(x.name)}${x.btCfg ? ' ✓' : ''}</option>`).join('')}</select>
+        <button class="btn sm" data-action="cb-save-st" ${st ? '' : 'disabled'}>전략 카드에 조건 저장</button>
+        <button class="btn sm" data-action="cb-merge">다른 전략 조건 합치기</button>
+        <button class="btn sm" data-action="cb-reset">새로 시작</button>
+      </div>
+      <div class="sub" style="font-size:.74rem;margin-top:6px">✓ 표시는 백테스트 조건이 저장된 전략 카드입니다. 고르면 그 조건을 불러옵니다.</div>
+
+      <div class="cb-sec">③ 진입</div>
+      <div class="cb-grid">
+        <div class="field"><label>방향</label><select data-cb="cfg" data-k="dir">${cbOpts([['both', '매수·매도 모두'], ['buy', '매수만'], ['sell', '매도만']], cfg.dir)}</select></div>
+        <div class="field"><label>시간봉</label><select data-cb="cfg" data-k="tf">${cbOpts(CB_TFS.map(x => [x[0], x[0]]), cfg.tf)}</select></div>
+      </div>
+      <details class="help" style="margin-top:10px"><summary>지표 설정 (① 볼린저 ${cfg.ind.b1.n}/${cfg.ind.b1.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b1.src)[1]} · ② 볼린저 ${cfg.ind.b2.n}/${cfg.ind.b2.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b2.src)[1]} · 이평 ${cfg.ind.ma.n}/${SRC_OPTS.find(x => x[0] === cfg.ind.ma.src)[1]})</summary>
+        <div class="cb-grid" style="margin-top:10px">
+          ${['b1', 'b2'].map((b, n) => `<div class="field"><label>${n ? '②' : '①'} 볼린저 기간</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="n"`, cfg.ind[b].n)}</div>
+            <div class="field"><label>${n ? '②' : '①'} 표준편차</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="k"`, cfg.ind[b].k)}</div>
+            <div class="field"><label>${n ? '②' : '①'} 기준 가격</label><select data-cb="ind" data-b="${b}" data-k="src">${cbOpts(SRC_OPTS, cfg.ind[b].src)}</select></div>`).join('')}
+          <div class="field"><label>이평 기간</label>${cbNum('data-cb="ind" data-b="ma" data-k="n"', cfg.ind.ma.n)}</div>
+          <div class="field"><label>이평 기준 가격</label><select data-cb="ind" data-b="ma" data-k="src">${cbOpts(SRC_OPTS, cfg.ind.ma.src)}</select></div>
+        </div></details>
+
+      <div class="cb-sec"><span>④ 조건 <span class="hint" style="font-weight:600">필수 = 항상 적용 · 비교 = 넣고/빼는 조합을 모두 테스트 (${optN}/${CB_MAX_OPT}개 → ${optN ? 2 ** optN : 1}가지)</span></span>
+        <select id="cbAdd" style="width:auto"><option value="">+ 조건 추가</option>${Object.entries(CB_CONDS).map(([k, d]) => `<option value="${k}">${esc(d.name)}</option>`).join('')}</select></div>
+      ${condRows || '<div class="empty" style="padding:16px">아직 조건이 없습니다. <b>+ 조건 추가</b>에서 고르거나, 전략 카드를 선택하거나, 조건을 붙여넣으세요.</div>'}
+
+      <div class="cb-sec">⑤ 청산</div>
+      <div class="cb-grid">
+        <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['candle', '신호봉 꼬리 끝 + 여유']], ex.sl)}</select></div>
+        ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
+        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['none', '없음']], ex.tp)}</select></div>
+        ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ''}
+        <div class="field"><label>지표 청산 (봉 마감)</label><select data-cb="ex" data-k="ind">${cbOpts([['none', '안 함'], ['opp', '반대쪽 밴드 찌름'], ['mid', '① 중심선 닿음'], ['ma', '이평 닿음']], ex.ind)}</select></div>
+        ${ex.ind === 'opp' ? `<div class="field"><label>반대쪽 밴드</label><select data-cb="ex" data-k="indBand">${cbOpts(BAND_OPTS, ex.indBand)}</select></div>` : ''}
+        <div class="field"><label>최대 보유 봉 (0=없음)</label>${cbNum('data-cb="ex" data-k="maxBars"', ex.maxBars)}</div>
+        <div class="field"><label>당일 청산</label><select data-cb="ex" data-k="dayEnd">${cbOpts([['0', '안 함'], ['1', 'MT5 하루 끝에 청산']], ex.dayEnd ? '1' : '0')}</select></div>
+        <div class="field"><label>비용 (스프레드 등) pt</label>${cbNum('data-cb="ex" data-k="cost"', ex.cost)}</div>
+      </div>
+      <div class="btn-row" style="margin-top:16px"><span id="cbRunWrap"></span></div>
+      <details class="help" style="margin-top:12px"><summary>이 백테스트는 이렇게 계산해요</summary>
+        <ul>
+          <li>모든 조건은 <b>마감된 봉</b> 기준으로 확인하고, 조건이 맞으면 <b>다음 봉 시가</b>에 진입합니다. 포지션은 한 번에 하나만 잡습니다.</li>
+          <li>조건은 매수 기준으로 적혀 있고, 매도는 위아래를 뒤집어 적용합니다. 예: 밴드 찌름(매수=하단)은 매도일 때 상단 찌름이에요.</li>
+          <li><b>최근 N봉 이내</b>: 2로 두면 이번 봉 포함 최근 3개 봉 중 한 번이라도 맞으면 통과합니다. 예: 더블비 찌름 뒤 1~2봉 안에 확인 캔들이 나올 때.</li>
+          <li>손절·익절은 1분봉으로 판정하고, 같은 1분봉에서 둘 다 닿으면 손절로 봅니다(보수적). 지표 청산은 봉 마감 가격에 나갑니다.</li>
+          <li>이평·① 중심선 청산은 진입가가 그 선의 반대편에 있을 때만 작동합니다.</li>
+          <li>추가 진입(물타기)과 매물대는 아직 지원하지 않아요. 매물대 대신 <b>최근 N봉 고점·저점 돌파</b>를 쓸 수 있어요.</li>
+          <li>MT5 1분봉에는 스프레드가 없으므로 <b>비용 pt</b>에 평균 스프레드를 넣으면 더 현실적입니다.</li>
+        </ul></details>`;
+    renderCBRunBtn();
+    if (cb.data && !BARS[cb.data]) cbGetData(cb.data).then(d => { if (d && tab === 'bt') renderCB(); });
+  }
+  function renderCBRunBtn() {
+    const w = $('#cbRunWrap'); if (!w) return;
+    w.innerHTML = `<button class="btn primary" data-action="cb-run" ${cb.busy ? 'disabled' : ''}>${cb.busy ? '계산 중…' : '▶ 백테스트 실행'}</button>`;
+  }
+
+  function renderCBRes() {
+    const card = $('#cbResCard'); if (!card) return;
+    const R = cb.res; card.hidden = !R;
+    if (!R) return;
+    const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
+    $('#cbResHint').textContent = `${R.name} ${R.cfg.tf} · ${R.from.slice(0, 10)} ~ ${R.to.slice(0, 10)}`;
+    const label = r => r.mask === 0 ? (R.req.length ? '필수 조건만' : '—') : (R.req.length ? '필수 + ' : '') + r.letters.split('').join(' + ');
+    const pick = R.res[cb.pick] || R.res[0];
+    $('#cbRes').innerHTML = `
+      ${R.opt.length ? `<div class="sub" style="font-size:.78rem;margin-bottom:8px">${R.opt.map((c, b) => `<b>${String.fromCharCode(65 + b)}</b> ${esc(CB_CONDS[c.type].name)}`).join(' · ')}</div>` : ''}
+      <div class="tbl-scroll"><table class="bd cmp cb-res"><thead><tr><th style="text-align:left">조합</th><th>거래</th><th>월평균</th><th>승률</th><th>손익비</th><th>PF</th><th>기대값</th><th>최대 낙폭</th><th>누적 pt</th></tr></thead><tbody>
+        ${R.res.map((r, i) => `<tr class="${r === pick ? 'on' : ''}" data-action="cb-pick" data-i="${i}">
+          <td class="lbl-c">${esc(label(r))}${r.st.n < 30 ? '<span class="cb-few">표본 적음 (30건 미만)</span>' : ''}</td>
+          <td>${r.st.n}건</td><td>${r.st.perMonth == null ? '—' : r.st.perMonth.toFixed(1)}</td><td>${pct(r.st.winRate, 1)}</td>
+          <td>${r.st.payoff == null ? '—' : '1:' + r.st.payoff.toFixed(2)}</td><td>${f2(r.st.pf)}</td>
+          <td class="${cls(r.st.expR)}">${rTxt(r.st.expR)}</td><td>${r.st.mddR == null ? '—' : '-' + r.st.mddR.toFixed(1) + 'R'}</td>
+          <td class="${cls(r.st.total)}">${r.st.total >= 0 ? '+' : ''}${r.st.total.toFixed(0)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="chart-wrap" style="margin-top:14px"><canvas id="cbChart"></canvas></div>
+      <div class="legend"><span><i style="background:${BT_COLORS[0]}"></i>선택한 조합 (누적 R)</span>${pick.mask !== 0 && R.res.some(r => r.mask === 0) ? `<span><i style="background:#e2e8f0"></i>${esc(label(R.res.find(r => r.mask === 0)))}</span>` : ''}</div>
+      <div class="sub" style="font-size:.76rem;margin:8px 0 12px">행을 누르면 그 조합을 선택합니다. 기대값(R)은 거래 한 번에 평균 몇 R을 벌었는지예요. 1R = 그 거래의 손절 크기. 거래 수가 적은 조합은 우연일 수 있으니 기간을 바꿔 다시 확인하세요.</div>
+      <div class="btn-row">
+        <button class="btn sm primary" data-action="cb-keep">선택한 조합 저장 (비교 목록에 추가)</button>
+        <button class="btn sm" data-action="cb-adopt">선택한 조합을 필수 조건으로 확정</button>
+      </div>`;
+    const base = R.res.find(r => r.mask === 0);
+    requestAnimationFrame(() => drawMulti($('#cbChart'), [
+      ...(base && base !== pick && base.st.n ? [{ color: '#e2e8f0', vals: base.st.curveR, dash: true }] : []),
+      ...(pick.st.n ? [{ color: BT_COLORS[0], vals: pick.st.curveR }] : [])]));
+  }
+
+  function cbComboLabel(R, r) {
+    const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => CB_CONDS[c.type].name);
+    return names.join(' + ');
+  }
+  function cbKeep() {
+    const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
+    if (!r.trades.length) { toast('거래가 없는 조합은 저장할 수 없어요'); return; }
+    const st = cb.stId && findSt(cb.stId), ex = R.cfg.exit;
+    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : 'TP 없음';
+    const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
+      sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
+      from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: 'req' })) },
+      name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : 'SL 신호봉'} / ${tpTxt}`,
+      trades: r.trades.map(t => ({ ...t })) };
+    addRun(run);
+    if (st && !st.btIds.includes(run.id)) { st.btIds.push(run.id); save(); }
+    renderBTList(); renderBTCompare();
+    toast(st ? `저장했습니다 · "${st.name}" 전략 카드에도 연결됨` : '저장했습니다 · 아래 목록에서 비교할 수 있어요', 3000);
+  }
+  function cbAdopt() {
+    const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
+    const keep = new Set([...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => c.id));
+    const optIds = new Set(R.opt.map(c => c.id));
+    cb.cfg.conds.forEach(c => { if (keep.has(c.id)) c.role = 'req'; else if (optIds.has(c.id)) c.role = 'off'; });
+    cbSave(); renderCB();
+    toast('선택한 조합을 필수로, 나머지 비교 조건은 끔으로 바꿨습니다' + (cb.stId ? '. 전략 카드에 저장하려면 "전략 카드에 조건 저장"을 누르세요' : ''), 4000);
+  }
+
+  function cbLoadStrategy(id) {
+    cb.stId = id;
+    const st = id && findSt(id);
+    if (st && st.btCfg) { cb.cfg = cbNorm(clone(st.btCfg)); toast(`"${st.name}" 조건을 불러왔습니다`); }
+    else if (st) toast('이 전략 카드에는 아직 저장된 조건이 없어요. 조건을 만든 뒤 "전략 카드에 조건 저장"을 누르세요', 4000);
+    cb.res = null; cbSave(); renderCB(); renderCBRes();
+  }
+  function cbMerge() {
+    const list = S.strategies.filter(x => x.btCfg && x.id !== cb.stId);
+    if (!list.length) { toast('조건이 저장된 다른 전략 카드가 없습니다', 3000); return; }
+    dialog('다른 전략 조건 합치기', `<p>고른 전략의 조건을 지금 조건 아래에 <b>비교</b> 역할로 추가합니다. 백테스트를 돌리면 넣었을 때와 뺐을 때의 성과를 나란히 볼 수 있어요. 지표 설정·청산은 지금 설정을 그대로 씁니다.</p>
+      ${list.map(x => `<label class="check"><input type="checkbox" value="${x.id}"><span><b>${esc(x.name)}</b><br><small class="muted">${esc(cbSummary(cbNorm(x.btCfg))).replace(/\n/g, '<br>')}</small></span></label>`).join('')}`, [
+      { label: '취소', value: null },
+      { label: '합치기', cls: 'primary', onClick: () => {
+        const ids = $$('#dlgBody input:checked').map(x => x.value);
+        let added = 0;
+        for (const id of ids) for (const c of cbNorm(findSt(id).btCfg).conds) {
+          if (c.role === 'off') continue;
+          const same = cb.cfg.conds.some(x => x.type === c.type && JSON.stringify(x.p) === JSON.stringify(c.p));
+          if (!same) { cb.cfg.conds.push(cbNewCond(c.type, { p: c.p, role: 'opt' })); added++; }
+        }
+        closeDialog(); cbSave(); renderCB();
+        toast(added ? `조건 ${added}개를 비교 역할로 추가했습니다` : '새로 추가할 조건이 없었습니다 (이미 같은 조건이 있음)', 3500);
+      } }]);
+  }
+  function cbPaste() {
+    dialog('조건 붙여넣기', `<p>"조건 복사"로 복사한 글이나, Claude가 만들어 준 조건 코드를 통째로 붙여넣으세요. 지금 조건은 붙여넣은 내용으로 바뀝니다.</p>
+      <textarea id="cbPasteText" style="min-height:180px" placeholder='{"app":"tradedesk-conds", ...}'></textarea>`, [
+      { label: '취소', value: null },
+      { label: '불러오기', cls: 'primary', onClick: () => {
+        const txt = $('#cbPasteText').value, a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+        try {
+          const d = JSON.parse(txt.slice(a, b + 1));
+          const cfg = cbNorm(d.cfg || d);
+          if (!cfg.conds.length) throw new Error('조건이 없습니다');
+          cb.cfg = cfg; cb.res = null; closeDialog(); cbSave(); renderCB(); renderCBRes();
+          toast(`조건 ${cfg.conds.length}개를 불러왔습니다${d.name ? ' · ' + d.name : ''}`, 3000);
+        } catch (e) { toast('⚠ 조건 형식을 읽지 못했습니다: ' + e.message, 4000); }
+      } }]);
+  }
+
+  // 입력 반영
+  function cbInput(t) {
+    const k = t.dataset.k, i = +t.dataset.i, cfg = cb.cfg;
+    const val = t.tagName === 'SELECT' ? t.value : (num(t.value) ?? '');
+    switch (t.dataset.cb) {
+      case 'role': cfg.conds[i].role = t.value; break;
+      case 'p': cfg.conds[i].p[k] = val; break;
+      case 'cfg': cfg[k] = t.value; break;
+      case 'ind': cfg.ind[t.dataset.b][k] = val; break;
+      case 'ex': cfg.exit[k] = k === 'dayEnd' ? t.value === '1' : val; break;
+      case 'sym': { const m = cb.syms[cb.data]; if (!m) return; m[k] = k === 'dst' ? t.value === '1' : val; break; }
+      default: return;
+    }
+    cbSave(); renderCB();
+  }
+
+  // 전략 카드에 붙는 조건 요약
+  function strategyCondHTML(st) {
+    return `<div class="card">
+      <h2>백테스트 조건 <button class="btn sm" data-action="cb-open-st" data-id="${st.id}">${st.btCfg ? '백테스트에서 열기' : '조건 만들기'}</button></h2>
+      ${st.btCfg ? `<div class="sub" style="font-size:.8rem;white-space:pre-line">${esc(cbSummary(cbNorm(st.btCfg)))}</div>`
+        : '<div class="sub" style="font-size:.8rem">아직 조건이 없습니다. 진입 규칙을 조건 블록으로 만들면 1분봉으로 바로 백테스트하고, 다른 전략과 합쳐 비교할 수 있어요.</div>'}
+    </div>`;
   }
 
   /* =========================================================
@@ -2420,10 +2999,11 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
           </div>
         </div>
         <div class="stack">
+          ${strategyCondHTML(st)}
           <div class="card">
             <h2>백테스트 vs 실전 <span class="hint">R 기준</span></h2>
             ${S.bt.length ? `<div class="sub" style="font-size:.78rem;margin-bottom:6px">이 전략에 연결할 백테스트</div>
-              <div class="chips" style="margin-bottom:10px">${S.bt.map(b => chip('st-bt', b.id, `${b.symbol} ${b.tf} SL${+b.sl}/TP${+b.tp} · ${b.source === 'tester' ? '테스터' : '빠른'}`, st.btIds.includes(b.id), 'sm')).join('')}</div>`
+              <div class="chips" style="margin-bottom:10px">${S.bt.map(b => chip('st-bt', b.id, `${runTag(b)} · ${srcShort(b)}`, st.btIds.includes(b.id), 'sm')).join('')}</div>`
               : '<div class="sub" style="font-size:.8rem;margin-bottom:10px">저장된 백테스트가 없습니다. 백테스트 탭에서 결과를 가져오면 여기에 연결할 수 있어요.</div>'}
             <div class="tbl-scroll">${strategyCompareHTML(runs, real, st.name)}</div>
             <div class="sub" style="font-size:.76rem;margin-top:8px">실전은 매매일지에서 셋업을 <b>${esc(st.name || '이 전략 이름')}</b>(으)로 기록한 청산 매매 ${real.n}건 기준입니다.</div>
@@ -2457,7 +3037,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
   }
 
   function strategyCompareHTML(runs, real, name) {
-    const cols = runs.map((r, i) => ({ label: `${String.fromCharCode(65 + i)} · ${r.source === 'tester' ? '테스터' : '빠른'}`, sub: `${r.symbol} ${r.tf}`, st: runStats(r) }));
+    const cols = runs.map((r, i) => ({ label: `${String.fromCharCode(65 + i)} · ${srcShort(r)}`, sub: `${r.symbol} ${r.tf}`, st: runStats(r) }));
     cols.push({ label: '실전', sub: name || '', st: real, real: true });
     const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
     const rows = [
@@ -2740,6 +3320,36 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         const lb = document.createElement('div'); lb.className = 'lightbox';
         lb.innerHTML = `<img src="${src}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb); break;
       }
+      case 'cb-file': $('#cbFile').click(); break;
+      case 'cb-run': if (!cb.busy) cbRun(); break;
+      case 'cb-del': cb.cfg.conds.splice(+el.dataset.i, 1); cbSave(); renderCB(); break;
+      case 'cb-pick': cb.pick = +el.dataset.i; renderCBRes(); break;
+      case 'cb-keep': cbKeep(); break;
+      case 'cb-adopt': cbAdopt(); break;
+      case 'cb-merge': cbMerge(); break;
+      case 'cb-paste': cbPaste(); break;
+      case 'cb-copy': {
+        const st = cb.stId && findSt(cb.stId);
+        copyText(JSON.stringify({ app: 'tradedesk-conds', version: 1, name: st ? st.name : '', cfg: cb.cfg }), null);
+        toast('조건을 복사했습니다. 다른 기기나 채팅에 붙여넣을 수 있어요'); break;
+      }
+      case 'cb-reset':
+        ask('지금 조건을 비우고 새로 시작할까요? (전략 카드에 저장한 조건은 그대로 있어요)', '새로 시작').then(ok => {
+          if (!ok) return;
+          cb.cfg = cbDefaultCfg(); cb.stId = ''; cb.res = null; cbSave(); renderCB(); renderCBRes();
+        }); break;
+      case 'cb-save-st': {
+        const st = cb.stId && findSt(cb.stId); if (!st) break;
+        st.btCfg = clone(cb.cfg); save(); renderCB(); toast(`"${st.name}" 전략 카드에 조건을 저장했습니다`); break;
+      }
+      case 'cb-open-st': cbLoadStrategy(el.dataset.id); setTab('bt'); break;
+      case 'cb-data-del':
+        ask(`${cb.data} 1분봉 데이터를 이 브라우저에서 지울까요?`, '지우기', true).then(async ok => {
+          if (!ok) return;
+          const name = cb.data; delete BARS[name];
+          try { await barsReq('readwrite', st => st.delete(name)); } catch (err) {}
+          cb.res = null; await cbRefreshKeys(); cbSave(); renderCB(); renderCBRes();
+        }); break;
       case 'bt-import': $('#btFile').click(); break;
       case 'bt-tool': openTool(); break;
       case 'bt-tool-close': $('#toolCard').hidden = true; break;
@@ -2843,6 +3453,14 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
     renderBTList(); renderBTCompare();
   });
   $('#btSetup').addEventListener('change', () => { bt.setupPicked = true; renderBTCompare(); });
+  $('#cbRoot').addEventListener('change', e => {
+    const t = e.target;
+    if (t.id === 'cbAdd') { if (t.value) { cb.cfg.conds.push(cbNewCond(t.value)); cbSave(); renderCB(); } return; }
+    if (t.id === 'cbSt') { cbLoadStrategy(t.value); return; }
+    if (t.id === 'cbData') { cb.data = t.value; cb.res = null; cbSave(); renderCB(); renderCBRes(); return; }
+    if (t.dataset.cb) cbInput(t);
+  });
+  $('#cbFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) cbImportFile(f); });
   $('#btRealPeriod').addEventListener('change', renderBTCompare);
   $('#btFile').addEventListener('change', async e => {
     const f = e.target.files[0]; e.target.value = '';
@@ -2866,7 +3484,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
     if (f && $('#imText')) { $('#imText').value = await f.text(); toast('파일을 불러왔습니다. 합치기 또는 덮어쓰기를 누르세요'); }
   });
 
-  let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (tab === 'dash') renderDash(); if (tab === 'bt') renderBTCompare(); }, 150); });
+  let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (tab === 'dash') renderDash(); if (tab === 'bt') { renderBTCompare(); renderCBRes(); } }, 150); });
 
   // 다른 탭/창에서 데이터가 바뀌면 반영
   window.addEventListener('storage', e => { if (e.key === KEY) { S = load(); renderAll(); } });
@@ -2874,6 +3492,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
   migrateImgs();
   document.addEventListener('dragover', e => { const z = e.target.closest && e.target.closest('.gal-zone'); $$('.gal-zone.drag').forEach(x => { if (x !== z) x.classList.remove('drag'); }); if (z) z.classList.add('drag'); });
   applySeed();
+  cbRefreshKeys().then(() => { cbSave(); if (tab === 'bt') renderCB(); });
   /* 시작 */
   $('#appVer').textContent = APP_VERSION;
   applyColor();

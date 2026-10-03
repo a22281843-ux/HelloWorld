@@ -149,7 +149,7 @@
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row.three { grid-template-columns: 1fr 1fr 1fr; }
     .form-gap > * + * { margin-top: 14px; }
-    input[type=text], input[type=number], input[type=datetime-local], input[type=search], select, textarea {
+    input[type=text], input[type=number], input[type=datetime-local], input[type=date], input[type=search], select, textarea {
       width: 100%; min-width: 0; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px;
       padding: 10px 11px; font-size: 16px; outline: none; transition: border-color .15s;
     }
@@ -158,7 +158,7 @@
     select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
     select option { background: #12131a; }
     textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
-    input[type=datetime-local] { color-scheme: dark; }
+    input[type=datetime-local], input[type=date] { color-scheme: dark; }
     .inline-unit { position: relative; }
     .inline-unit input { padding-right: 38px; }
     .inline-unit span { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: .8rem; pointer-events: none; }
@@ -2245,9 +2245,33 @@
   }
   const cb = (() => {
     let d = {}; try { d = JSON.parse(localStorage.getItem(CB_KEY)) || {}; } catch (e) {}
-    return { stId: d.stId || '', cfg: cbNorm(d.cfg), data: d.data || '', syms: d.syms || {}, keys: [], res: null, pick: 0, busy: false };
+    return { stId: d.stId || '', cfg: cbNorm(d.cfg), data: d.data || '', syms: d.syms || {}, keys: [], res: null, pick: 0, busy: false,
+      per: { from: '', to: '', ...(d.per || {}) }, mm: { mode: 'lots', lots: 1, risk: 1, balance: 10000, ...(d.mm || {}) } };
   })();
-  const cbSave = () => { try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms })); } catch (e) {} };
+  const cbSave = () => { try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms, per: cb.per, mm: cb.mm })); } catch (e) {} };
+  // 종목 사양(설정 탭)에서 1랏당 1.0 가격 변동 손익·수수료 기본값
+  function cbSymDefaults(name) { const sp = sym(mapSymbol(name) || name); return { pv: num(sp.pv) ?? 1, comm: num(sp.comm) || 0 }; }
+  function cbMeta(name) {
+    const m = cb.syms[name]; if (!m) return null;
+    if (m.pv == null || m.comm == null) { const d = cbSymDefaults(name); if (m.pv == null) m.pv = d.pv; if (m.comm == null) m.comm = d.comm; }
+    return m;
+  }
+  // 거래별 랏·달러 손익·잔고 (고정 랏 또는 잔고의 위험 %)
+  function cbApplyMoney(trades, mm, meta) {
+    const pv = num(meta.pv) ?? 1, comm = num(meta.comm) || 0, pt = num(meta.point) || 1, start = num(mm.balance) || 0;
+    let bal = start, peak = start, mdd = 0;
+    for (const t of trades) {
+      let lots = mm.mode === 'risk'
+        ? Math.floor(Math.max(0, bal) * (num(mm.risk) || 0) / 100 / (t.risk * pt * pv + comm) / 0.01 + 1e-9) * 0.01
+        : (num(mm.lots) || 0);
+      lots = Math.max(0, Math.round(lots * 100) / 100);
+      t.lots = lots;
+      t.profit = Math.round((t.points * pt * pv * lots - comm * lots) * 100) / 100;
+      bal += t.profit; t.bal = Math.round(bal * 100) / 100;
+      peak = Math.max(peak, bal); mdd = Math.max(mdd, peak - bal);
+    }
+    return { start, end: bal, total: bal - start, mdd, mddPct: peak > 0 ? mdd / peak : null };
+  }
 
   /* ---------- 1분봉 저장소 (IndexedDB, 백업에는 넣지 않음) ---------- */
   let barsDBp = null;
@@ -2423,7 +2447,7 @@
     return false;
   }
 
-  function cbSimulate(X, D, ex, sigB, sigS) {
+  function cbSimulate(X, D, ex, sigB, sigS, range) {
     const { B, N, pt } = X, M = D.t.length, trades = [];
     const slPts = num(ex.slPts) || 0, slBuf = num(ex.slBuf) || 0, tpR = num(ex.tpR) || 0, tpPts = num(ex.tpPts) || 0;
     const maxBars = Math.round(num(ex.maxBars) || 0), cost = num(ex.cost) || 0;
@@ -2431,6 +2455,7 @@
       const b = sigB ? sigB[i] : 0, sl = sigS ? sigS[i] : 0;
       if (b === sl) continue;   // 신호 없음 또는 양쪽 동시 신호
       const s = b ? 1 : -1, j = i + 1, m0 = B.s[j], E = D.o[m0];
+      if (range) { const kt = kstOf(D.t[m0], X.meta); if (kt < range[0]) continue; if (kt > range[1]) break; }
       const slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : E - s * slPts * pt;
       const risk = (E - slP) * s;
       if (!(risk > 0)) continue;
@@ -2466,7 +2491,7 @@
     cb.busy = true; renderCBRunBtn();
     await new Promise(r => setTimeout(r, 30));
     try {
-      const meta = cb.syms[cb.data] || { point: 1, gmt: 2, dst: true };
+      const meta = cbMeta(cb.data) || { point: 1, gmt: 2, dst: true, pv: 1, comm: 0 };
       const X = cbContext(D, cfg, meta);
       const sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
       const arr = new Map();
@@ -2477,19 +2502,25 @@
         for (const c of set) { const a = arr.get(c.id)[s]; for (let i = 0; i < X.N; i++) out[i] &= a[i]; }
         return out;
       };
-      const from = isoOf(kstOf(D.t[0], meta)), to = isoOf(kstOf(D.t[D.t.length - 1], meta)), months = monthsBetween(from, to);
+      const d0 = kstOf(D.t[0], meta), d1 = kstOf(D.t[D.t.length - 1], meta);
+      const pf = cb.per.from ? Date.parse(cb.per.from + 'T00:00Z') : NaN, pt2 = cb.per.to ? Date.parse(cb.per.to + 'T23:59Z') : NaN;
+      const range = [isFinite(pf) ? Math.max(pf, d0) : d0, isFinite(pt2) ? Math.min(pt2, d1) : d1];
+      if (range[0] >= range[1]) throw new Error('기간이 데이터 범위 밖이거나 시작일이 끝일보다 늦습니다');
+      const from = isoOf(range[0]), to = isoOf(range[1]), months = monthsBetween(from, to);
+      const mm = { ...cb.mm };
       const res = [];
       for (let mask = 0; mask < 2 ** opt.length; mask++) {
         const set = [...req, ...opt.filter((_, b) => mask & (1 << b))];
         if (!set.length) continue;
-        const trades = cbSimulate(X, D, cfg.exit, and(set, 1), and(set, -1));
+        const trades = cbSimulate(X, D, cfg.exit, and(set, 1), and(set, -1), range);
         const st = seriesStats(trades.map(t => t.points), trades.map(t => t.points / t.risk), months);
         st.curveR = cumulative(trades.map(t => t.points / t.risk));
         st.avgRisk = trades.length ? trades.reduce((a, t) => a + t.risk, 0) / trades.length : null;
+        st.money = cbApplyMoney(trades, mm, meta);
         res.push({ mask, letters: opt.map((_, b) => mask & (1 << b) ? String.fromCharCode(65 + b) : '').join(''), trades, st });
       }
       res.sort((a, b) => (a.mask === 0 ? -1 : b.mask === 0 ? 1 : 0) || ((b.st.n >= 10) - (a.st.n >= 10)) || ((b.st.expR ?? -99) - (a.st.expR ?? -99)));
-      cb.res = { res, opt: opt.map(c => ({ ...c })), req: req.map(c => ({ ...c })), cfg: clone(cfg), name: cb.data, from, to, bars: X.N, meta: { ...meta } };
+      cb.res = { res, opt: opt.map(c => ({ ...c })), req: req.map(c => ({ ...c })), cfg: clone(cfg), name: cb.data, from, to, bars: X.N, meta: { ...meta }, mm };
       cb.pick = res.length > 1 && res[0].mask === 0 ? 1 : 0;
     } catch (err) { toast('⚠ 계산 중 오류: ' + err.message, 4000); }
     cb.busy = false; renderCB(); renderCBRes();
@@ -2508,7 +2539,7 @@
 
   function renderCB() {
     const root = $('#cbRoot'); if (!root) return;
-    const cfg = cb.cfg, ex = cfg.exit, meta = cb.syms[cb.data], D = BARS[cb.data];
+    const cfg = cb.cfg, ex = cfg.exit, meta = cbMeta(cb.data), D = BARS[cb.data], mm = cb.mm;
     const optN = cfg.conds.filter(c => c.role === 'opt').length;
     let optIdx = 0;
     const condRows = cfg.conds.map((c, i) => {
@@ -2534,7 +2565,14 @@
           <div class="field"><label>1pt = 가격</label>${cbNum('data-cb="sym" data-k="point"', meta.point)}</div>
           <div class="field"><label>서버 시간대 (겨울 GMT+)</label>${cbNum('data-cb="sym" data-k="gmt"', meta.gmt)}</div>
           <div class="field"><label>서머타임</label><select data-cb="sym" data-k="dst">${cbOpts([['1', '미국 서머타임 따름'], ['0', '따르지 않음']], meta.dst ? '1' : '0')}</select></div>
-        </div>`
+        </div>
+        <div class="cb-sec" style="margin-top:14px">백테스트 기간 (한국 시간, 비우면 전체)</div>
+        <div class="cb-grid">
+          <div class="field"><label>시작일</label><input type="date" data-cb="per" data-k="from" value="${esc(cb.per.from)}" ${D ? `min="${isoOf(kstOf(D.t[0], meta)).slice(0, 10)}" max="${isoOf(kstOf(D.t[D.t.length - 1], meta)).slice(0, 10)}"` : ''}></div>
+          <div class="field"><label>끝일</label><input type="date" data-cb="per" data-k="to" value="${esc(cb.per.to)}" ${D ? `min="${isoOf(kstOf(D.t[0], meta)).slice(0, 10)}" max="${isoOf(kstOf(D.t[D.t.length - 1], meta)).slice(0, 10)}"` : ''}></div>
+        </div>
+        <div class="chips" style="margin-top:8px">${[[0, '전체'], [1, '최근 1개월'], [3, '최근 3개월'], [6, '최근 6개월']].map(([m, l]) => `<button class="chip sm" data-action="cb-per" data-m="${m}">${l}</button>`).join('')}
+          <button class="chip sm" data-action="cb-per" data-m="half1">앞 절반</button><button class="chip sm" data-action="cb-per" data-m="half2">뒤 절반</button></div>`
         : `<div class="sub" style="font-size:.78rem;margin-top:8px">MT5에서 <b>ExportM1Bars</b> 스크립트를 차트에 끌어다 놓으면 <code>MQL5\\Files</code>에 1분봉 CSV가 생깁니다. 한 번 불러오면 이 브라우저에 저장돼요.</div>`}
 
       <div class="cb-sec"><span>② 전략 카드</span>
@@ -2577,6 +2615,15 @@
         <div class="field"><label>당일 청산</label><select data-cb="ex" data-k="dayEnd">${cbOpts([['0', '안 함'], ['1', 'MT5 하루 끝에 청산']], ex.dayEnd ? '1' : '0')}</select></div>
         <div class="field"><label>비용 (스프레드 등) pt</label>${cbNum('data-cb="ex" data-k="cost"', ex.cost)}</div>
       </div>
+      <div class="cb-sec">⑥ 랏 · 금액</div>
+      <div class="cb-grid">
+        <div class="field"><label>랏 방식</label><select data-cb="mm" data-k="mode">${cbOpts([['lots', '고정 랏'], ['risk', '잔고의 위험 % (손절 기준)']], mm.mode)}</select></div>
+        ${mm.mode === 'risk' ? `<div class="field"><label>거래당 위험 %</label>${cbNum('data-cb="mm" data-k="risk"', mm.risk)}</div>` : `<div class="field"><label>랏 수</label>${cbNum('data-cb="mm" data-k="lots"', mm.lots)}</div>`}
+        <div class="field"><label>시작 잔고 $</label>${cbNum('data-cb="mm" data-k="balance"', mm.balance)}</div>
+        ${meta ? `<div class="field"><label>1랏 · 가격 1.0 변동 손익 $</label>${cbNum('data-cb="sym" data-k="pv"', meta.pv)}</div>
+        <div class="field"><label>수수료 $/랏 (왕복)</label>${cbNum('data-cb="sym" data-k="comm"', meta.comm)}</div>` : ''}
+      </div>
+      ${meta ? `<div class="sub" style="font-size:.74rem;margin-top:6px">1pt 움직이면 1랏당 <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1), 2)}</b>${mm.mode === 'lots' ? ` · ${num(mm.lots) || 0}랏이면 1pt = <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1) * (num(mm.lots) || 0), 2)}</b>` : ' · 랏은 거래마다 (잔고 × 위험 %) ÷ 손절 금액으로 계산, 0.01 단위 내림'}. 기본값은 설정 탭의 종목 사양에서 가져와요.</div>` : ''}
       <div class="btn-row" style="margin-top:16px"><span id="cbRunWrap"></span></div>
       <details class="help" style="margin-top:12px"><summary>이 백테스트는 이렇게 계산해요</summary>
         <ul>
@@ -2601,18 +2648,19 @@
     const R = cb.res; card.hidden = !R;
     if (!R) return;
     const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
-    $('#cbResHint').textContent = `${R.name} ${R.cfg.tf} · ${R.from.slice(0, 10)} ~ ${R.to.slice(0, 10)}`;
+    $('#cbResHint').textContent = `${R.name} ${R.cfg.tf} · ${R.from.slice(0, 10)} ~ ${R.to.slice(0, 10)} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`}`;
     const label = r => r.mask === 0 ? (R.req.length ? '필수 조건만' : '—') : (R.req.length ? '필수 + ' : '') + r.letters.split('').join(' + ');
     const pick = R.res[cb.pick] || R.res[0];
     $('#cbRes').innerHTML = `
       ${R.opt.length ? `<div class="sub" style="font-size:.78rem;margin-bottom:8px">${R.opt.map((c, b) => `<b>${String.fromCharCode(65 + b)}</b> ${esc(CB_CONDS[c.type].name)}`).join(' · ')}</div>` : ''}
-      <div class="tbl-scroll"><table class="bd cmp cb-res"><thead><tr><th style="text-align:left">조합</th><th>거래</th><th>월평균</th><th>승률</th><th>손익비</th><th>PF</th><th>기대값</th><th>최대 낙폭</th><th>누적 pt</th></tr></thead><tbody>
+      <div class="tbl-scroll"><table class="bd cmp cb-res"><thead><tr><th style="text-align:left">조합</th><th>거래</th><th>월평균</th><th>승률</th><th>손익비</th><th>PF</th><th>기대값</th><th>최대 낙폭</th><th>누적 pt</th><th>순손익 $</th><th>최종 잔고</th></tr></thead><tbody>
         ${R.res.map((r, i) => `<tr class="${r === pick ? 'on' : ''}" data-action="cb-pick" data-i="${i}">
           <td class="lbl-c">${esc(label(r))}${r.st.n < 30 ? '<span class="cb-few">표본 적음 (30건 미만)</span>' : ''}</td>
           <td>${r.st.n}건</td><td>${r.st.perMonth == null ? '—' : r.st.perMonth.toFixed(1)}</td><td>${pct(r.st.winRate, 1)}</td>
           <td>${r.st.payoff == null ? '—' : '1:' + r.st.payoff.toFixed(2)}</td><td>${f2(r.st.pf)}</td>
           <td class="${cls(r.st.expR)}">${rTxt(r.st.expR)}</td><td>${r.st.mddR == null ? '—' : '-' + r.st.mddR.toFixed(1) + 'R'}</td>
-          <td class="${cls(r.st.total)}">${r.st.total >= 0 ? '+' : ''}${r.st.total.toFixed(0)}</td></tr>`).join('')}
+          <td class="${cls(r.st.total)}">${r.st.total >= 0 ? '+' : ''}${r.st.total.toFixed(0)}</td>
+          <td class="${cls(r.st.money.total)}">${money(r.st.money.total)}</td><td>${money(r.st.money.end, false)}</td></tr>`).join('')}
       </tbody></table></div>
       <div class="chart-wrap" style="margin-top:14px"><canvas id="cbChart"></canvas></div>
       <div class="legend"><span><i style="background:${BT_COLORS[0]}"></i>선택한 조합 (누적 R)</span>${pick.mask !== 0 && R.res.some(r => r.mask === 0) ? `<span><i style="background:#e2e8f0"></i>${esc(label(R.res.find(r => r.mask === 0)))}</span>` : ''}</div>
@@ -2623,6 +2671,12 @@
       </div>
       <div class="cb-sec" style="margin-top:20px"><span>거래 내역 · ${esc(label(pick))} (${pick.trades.length}건)</span>
         ${pick.trades.length ? `<span class="hint" style="font-weight:600">승 ${pick.st.w} · 패 ${pick.st.l} · 합계 <span class="${cls(pick.st.total)}">${pick.st.total >= 0 ? '+' : ''}${pick.st.total.toFixed(1)}pt</span></span>` : ''}</div>
+      ${pick.trades.length ? `<div class="kpis" style="margin-bottom:12px">
+        <div class="kpi"><div class="k">시작 → 최종 잔고</div><div class="v">${money(pick.st.money.end, false)}</div><div class="s">시작 ${money(pick.st.money.start, false)}</div></div>
+        <div class="kpi"><div class="k">순손익</div><div class="v ${cls(pick.st.money.total)}">${money(pick.st.money.total)}</div><div class="s">${pick.st.money.start ? pct(pick.st.money.total / pick.st.money.start, 1) : ''}</div></div>
+        <div class="kpi"><div class="k">최대 낙폭</div><div class="v down">${pick.st.money.mdd ? '-' + money(pick.st.money.mdd, false) : '$0.00'}</div><div class="s">${pick.st.money.mddPct == null ? '' : '고점 대비 ' + pct(pick.st.money.mddPct, 1)}</div></div>
+        <div class="kpi"><div class="k">거래당 평균</div><div class="v ${cls(pick.st.money.total)}">${money(pick.st.money.total / pick.trades.length)}</div><div class="s">${pick.trades.length}건</div></div>
+      </div>` : ''}
       ${cbTradesHTML(pick.trades)}`;
     const base = R.res.find(r => r.mask === 0);
     requestAnimationFrame(() => drawMulti($('#cbChart'), [
@@ -2634,16 +2688,15 @@
     if (!trades.length) return '<div class="empty" style="padding:16px">이 조합은 조건을 모두 만족한 봉이 없어 거래가 없습니다.</div>';
     const dg = Math.max(2, ...trades.slice(0, 20).map(t => priceDigits(t.entry)));
     const tm = s => (s || '').replace('T', ' ').slice(2);
-    let cum = 0;
-    return `<div class="tbl-scroll" style="max-height:440px;overflow-y:auto"><table class="bd"><thead><tr><th>#</th><th>신호봉</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>손익 pt</th><th>R</th><th>누적 pt</th></tr></thead><tbody>${
-      trades.map((t, i) => { cum += t.points; const r = t.risk ? t.points / t.risk : null;
+    return `<div class="tbl-scroll" style="max-height:440px;overflow-y:auto"><table class="bd"><thead><tr><th>#</th><th>신호봉</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>랏</th><th>손익 pt</th><th>R</th><th>손익 $</th><th>잔고</th></tr></thead><tbody>${
+      trades.map((t, i) => { const r = t.risk ? t.points / t.risk : null;
         return `<tr><td>${i + 1}</td><td>${tm(t.crossTime)}</td><td>${tm(t.entryTime)}</td><td>${tm(t.exitTime)}</td>
           <td><span class="badge ${t.dir === -1 ? 'S' : 'L'}">${t.dir === -1 ? '매도' : '매수'}</span></td>
           <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_ALL[t.reason] || esc(t.reason)}</td>
-          <td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td><td class="${cls(r)}">${rTxt(r)}</td>
-          <td class="${cls(cum)}">${cum > 0 ? '+' : ''}${fx(cum, 1)}</td></tr>`; }).join('')
+          <td>${t.lots == null ? '—' : fx(t.lots, 2)}</td><td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td><td class="${cls(r)}">${rTxt(r)}</td>
+          <td class="${cls(t.profit)}">${money(t.profit)}</td><td>${money(t.bal, false)}</td></tr>`; }).join('')
     }</tbody></table></div>
-    <div class="sub" style="font-size:.74rem;margin-top:6px">손절 크기(1R)는 거래마다 다를 수 있어요. 달러 손익은 손익 pt × 1pt당 금액 × 랏으로 계산하세요.</div>`;
+    <div class="sub" style="font-size:.74rem;margin-top:6px">손익 $ = 손익 pt × 1pt당 금액 × 랏 − 수수료. 손익 pt에는 비용(스프레드) pt가 이미 빠져 있어요. 손절 크기(1R)는 거래마다 다를 수 있어요.</div>`;
   }
   function cbComboLabel(R, r) {
     const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => CB_CONDS[c.type].name);
@@ -2657,7 +2710,8 @@
     const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
       sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
       from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: 'req' })) },
-      name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : 'SL 신호봉'} / ${tpTxt}`,
+      lots: R.mm.mode === 'lots' ? num(R.mm.lots) : null,
+      name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : 'SL 신호봉'} / ${tpTxt} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`} · ${R.from.slice(0, 10)}~${R.to.slice(0, 10)}`,
       trades: r.trades.map(t => ({ ...t })) };
     addRun(run);
     if (st && !st.btIds.includes(run.id)) { st.btIds.push(run.id); save(); }
@@ -2725,6 +2779,8 @@
       case 'ind': cfg.ind[t.dataset.b][k] = val; break;
       case 'ex': cfg.exit[k] = k === 'dayEnd' ? t.value === '1' : val; break;
       case 'sym': { const m = cb.syms[cb.data]; if (!m) return; m[k] = k === 'dst' ? t.value === '1' : val; break; }
+      case 'per': cb.per[k] = t.value; break;
+      case 'mm': cb.mm[k] = t.tagName === 'SELECT' ? t.value : val; break;
       default: return;
     }
     cbSave(); renderCB();
@@ -3329,6 +3385,15 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       }
       case 'cb-file': $('#cbFile').click(); break;
       case 'cb-run': if (!cb.busy) cbRun(); break;
+      case 'cb-per': {
+        const D = BARS[cb.data], m = cbMeta(cb.data); if (!D || !m) break;
+        const d0 = kstOf(D.t[0], m), d1 = kstOf(D.t[D.t.length - 1], m), v = el.dataset.m, day = ms => isoOf(ms).slice(0, 10);
+        if (v === '0') cb.per = { from: '', to: '' };
+        else if (v === 'half1') cb.per = { from: day(d0), to: day((d0 + d1) / 2) };
+        else if (v === 'half2') cb.per = { from: day((d0 + d1) / 2 + 864e5), to: day(d1) };
+        else { const e = new Date(d1); e.setUTCMonth(e.getUTCMonth() - +v); cb.per = { from: day(Math.max(d0, e.getTime())), to: day(d1) }; }
+        cbSave(); renderCB(); break;
+      }
       case 'cb-del': cb.cfg.conds.splice(+el.dataset.i, 1); cbSave(); renderCB(); break;
       case 'cb-pick': cb.pick = +el.dataset.i; renderCBRes(); break;
       case 'cb-keep': cbKeep(); break;

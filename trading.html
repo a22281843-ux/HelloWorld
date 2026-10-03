@@ -227,6 +227,8 @@
     .bt-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
     .bt-row + .bt-row { margin-top: 6px; }
     /* 조건 백테스트 */
+    .ext-sum { cursor: pointer; font-weight: 700; font-size: .92rem; color: var(--sub); }
+    .ext-sum .hint { font-weight: 500; font-size: .76rem; color: var(--muted); margin-left: 6px; }
     .cb-sec { font-size: .8rem; font-weight: 800; color: var(--sub); margin: 18px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .cb-sec:first-child { margin-top: 0; }
     .cb-cond { display: grid; grid-template-columns: 86px 1fr auto; gap: 8px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
@@ -489,42 +491,11 @@
       </div>
 
       <div class="card">
-        <h2>백테스트 결과 가져오기</h2>
-        <div class="btn-row">
-          <button class="btn primary" data-action="bt-import">⬆ MT5 전략테스터 결과 열기</button>
-          <button class="btn" data-action="bt-tool">⚡ 빠른 검증 (교육 도구) 열기</button>
-        </div>
-        <input type="file" id="btFile" accept=".csv,text/csv" hidden>
-        <input type="file" id="toolFile" accept=".html,text/html" hidden>
-        <details class="help">
-          <summary>MT5 전략테스터로 정밀 검증하는 법 (추천)</summary>
-          <ul>
-            <li>MT5 <b>보기 → 전략 테스터</b>(Ctrl+R) 열기 → Expert에서 <b>DoubleB_GCDC_Tester</b> 선택</li>
-            <li>종목(XAUUSD 등)·기간 선택, <b>모델링: "실제 틱 기반의 모든 틱"</b>, 시간 프레임은 M1</li>
-            <li><b>입력</b> 탭에서 진입 시간봉(M5/M10)·손절·익절(pt)·랏 설정 → <b>시작</b></li>
-            <li>끝나면 <b>저널</b> 탭에 "거래 N건을 … 저장했습니다"와 파일 위치가 나옵니다</li>
-            <li>여기서 <b>MT5 전략테스터 결과 열기</b> → <code>…\MetaQuotes\Terminal\Common\Files\TradeDesk_backtest.csv</code> 선택 (파일을 이 화면에 끌어다 놓아도 됩니다)</li>
-          </ul>
-          <p>실제 틱 순서로 손절·익절 중 먼저 닿은 쪽을 정확히 판정하고, 실제 스프레드·수수료가 반영됩니다. 설정을 바꿔 여러 번 돌리면 결과가 아래에 쌓이고 서로 비교할 수 있어요. 시간은 모두 한국 시간입니다.</p>
-        </details>
-        <details class="help">
-          <summary>빠른 검증 (1분봉 CSV)은 언제 쓰나요?</summary>
-          <p>손절·익절 값을 바꿔 가며 몇 초 만에 대략 비교할 때 씁니다. 한 1분봉 안에서 손절·익절이 둘 다 닿으면 손절로 가정하므로, 최종 판단은 전략테스터 결과로 하세요.
-          1분봉 CSV는 MT5에서 <b>ExportM1Bars</b> 스크립트를 차트에 끌어다 놓으면 <code>MQL5\Files</code>에 만들어집니다. 결과 화면의 <b>⇪ Trade Desk에 저장</b>을 누르면 아래 목록에 저장됩니다.</p>
-        </details>
-      </div>
-
-      <div class="card" id="toolCard" hidden>
-        <h2><span>빠른 검증 (1분봉)</span><button class="btn sm" data-action="bt-tool-close">닫기</button></h2>
-        <div id="toolBox"></div>
-      </div>
-
-      <div class="card">
         <h2>저장된 백테스트 <span class="hint">체크해서 비교 (최대 4개)</span></h2>
         <div id="btList"></div>
       </div>
 
-      <div class="card" id="btCmpCard">
+      <div class="card" id="btCmpCard" hidden>
         <h2><span>비교 · 실전과 함께</span></h2>
         <div class="row" style="margin-bottom:12px">
           <div class="field"><label for="btSetup">실전 매매 셋업</label><select id="btSetup"></select></div>
@@ -539,6 +510,20 @@
       <div class="card" id="btDetailCard" hidden>
         <h2><span id="btDetailTitle">거래 내역</span><button class="btn sm" data-action="bt-detail-close">닫기</button></h2>
         <div class="tbl-scroll" id="btDetail" style="max-height:420px;overflow-y:auto"></div>
+      </div>
+
+      <div class="card" id="extCard">
+        <details id="extDetails">
+          <summary class="ext-sum">기타: MT5 전략테스터 결과 가져오기 · 교육 도구 <span class="hint">필요할 때만</span></summary>
+          <div class="btn-row" style="margin-top:12px" id="extBtns"></div>
+          <input type="file" id="btFile" accept=".csv,text/csv" hidden>
+          <input type="file" id="toolFile" accept=".html,text/html" hidden>
+          <details class="help">
+            <summary>MT5 전략테스터 결과는 언제 쓰나요?</summary>
+            <p>조건 백테스트로 고른 조합을 MT5 전략테스터 EA로 한 번 더 정밀하게 확인할 때 씁니다. 실제 틱 순서와 실제 스프레드·수수료가 반영돼요. EA가 끝나면 <code>…\MetaQuotes\Terminal\Common\Files\TradeDesk_backtest.csv</code>가 생기고, 그 파일을 열면 위의 저장된 백테스트 목록에 들어갑니다.</p>
+          </details>
+          <div id="toolCard" hidden style="margin-top:12px"><div id="toolBox"></div></div>
+        </details>
       </div>
     </section>
 
@@ -1948,7 +1933,7 @@
   const GCDC_SETUP = '더블비 GCDC 첫터치';
   const BT_COLORS = ['#818cf8', '#34d399', '#fbbf24', '#f472b6'];
   const REASON_KO = { SL: '손절', TP: '익절', END: '기간 종료' };
-  const bt = { sel: [], detail: null, setupPicked: false };
+  const bt = { sel: [], detail: null, setupPicked: false, toolOpen: false };
 
   const isBacktestCSV = text => /^\uFEFF?#meta,app=tradedesk-backtest/.test(text);
 
@@ -2072,6 +2057,10 @@
 
   function renderBT() {
     renderCB(); renderCBRes();
+    const hasTool = !!toolHTML();
+    $('#extBtns').innerHTML = `<button class="btn sm" data-action="bt-import">⬆ MT5 전략테스터 결과 열기</button>`
+      + (hasTool ? `<button class="btn sm" data-action="bt-tool">⚡ 교육 도구 열기</button>` : `<button class="btn sm" data-action="bt-tool-connect">교육 도구 파일 연결</button>`);
+    $('#toolCard').hidden = !(bt.toolOpen && hasTool);
     renderBTList();
     const sel = $('#btSetup'), cur = sel.value;
     sel.innerHTML = S.settings.setups.map(x => `<option>${esc(x)}</option>`).join('');
@@ -2096,10 +2085,12 @@
         </div>
         <div class="bt-meta">${st.n}건 · 승률 ${pct(st.winRate, 1)} · PF ${st.pf == null ? '—' : st.pf === Infinity ? '∞' : st.pf.toFixed(2)} · <span class="${cls(st.total)}">${st.total >= 0 ? '+' : ''}${st.total.toFixed(1)}pt</span> · 기대값 <span class="${cls(st.expR)}">${rTxt(st.expR)}</span>${st.profit != null ? ` · <span class="${cls(st.profit)}">${money(st.profit)}</span>` : ''}</div>
       </div>`;
-    }).join('') : '<div class="empty" style="padding:22px">아직 저장된 백테스트가 없습니다.<br>MT5 전략테스터 결과를 열거나, 빠른 검증에서 <b>⇪ Trade Desk에 저장</b>을 누르세요.</div>';
+    }).join('') : '<div class="empty" style="padding:22px">아직 저장된 결과가 없습니다.<br>위 조건 백테스트를 실행한 뒤 <b>선택한 조합 저장</b>을 누르면 여기에 쌓이고, 서로 비교할 수 있어요.</div>';
   }
 
   function renderBTCompare() {
+    $('#btCmpCard').hidden = !S.bt.length;
+    if (!S.bt.length) return;
     const runs = bt.sel.map(id => S.bt.find(r => r.id === id)).filter(Boolean);
     const setup = $('#btSetup').value, same = $('#btRealPeriod').value === 'same';
     // 실전: 첫 번째 선택한 백테스트의 종목·기간 기준
@@ -2179,14 +2170,12 @@
   }
   function openTool() {
     const html = toolHTML();
+    if (!html) { $('#toolFile').click(); return; }
+    bt.toolOpen = true;
+    $('#extDetails').open = true;
     $('#toolCard').hidden = false;
-    if (!html) {
-      $('#toolBox').innerHTML = `<div class="alert info">빠른 검증은 교육에서 따로 받은 백테스트 HTML 파일이 있어야 열리는 별도 도구예요. 그 파일이 없다면 이 화면 맨 위의 <b>조건 백테스트</b>를 쓰세요. 1분봉 CSV만 있으면 되고, 조건도 직접 고를 수 있어요.</div>
-        <div class="btn-row" style="margin-top:10px"><button class="btn primary" data-action="bt-go-cb">↑ 조건 백테스트로 가기</button><button class="btn" data-action="bt-tool-connect">교육 도구 파일 연결</button></div>`;
-      return;
-    }
     if (!$('#toolFrame')) {
-      $('#toolBox').innerHTML = '<iframe id="toolFrame" class="tool-frame" title="빠른 검증 도구"></iframe>';
+      $('#toolBox').innerHTML = '<div class="btn-row" style="justify-content:flex-end;margin-bottom:8px"><button class="btn sm" data-action="bt-tool-close">교육 도구 닫기</button></div><iframe id="toolFrame" class="tool-frame" title="교육 도구"></iframe>';
       $('#toolFrame').srcdoc = html;
     }
     $('#toolCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2631,13 +2620,31 @@
       <div class="btn-row">
         <button class="btn sm primary" data-action="cb-keep">선택한 조합 저장 (비교 목록에 추가)</button>
         <button class="btn sm" data-action="cb-adopt">선택한 조합을 필수 조건으로 확정</button>
-      </div>`;
+      </div>
+      <div class="cb-sec" style="margin-top:20px"><span>거래 내역 · ${esc(label(pick))} (${pick.trades.length}건)</span>
+        ${pick.trades.length ? `<span class="hint" style="font-weight:600">승 ${pick.st.w} · 패 ${pick.st.l} · 합계 <span class="${cls(pick.st.total)}">${pick.st.total >= 0 ? '+' : ''}${pick.st.total.toFixed(1)}pt</span></span>` : ''}</div>
+      ${cbTradesHTML(pick.trades)}`;
     const base = R.res.find(r => r.mask === 0);
     requestAnimationFrame(() => drawMulti($('#cbChart'), [
       ...(base && base !== pick && base.st.n ? [{ color: '#e2e8f0', vals: base.st.curveR, dash: true }] : []),
       ...(pick.st.n ? [{ color: BT_COLORS[0], vals: pick.st.curveR }] : [])]));
   }
 
+  function cbTradesHTML(trades) {
+    if (!trades.length) return '<div class="empty" style="padding:16px">이 조합은 조건을 모두 만족한 봉이 없어 거래가 없습니다.</div>';
+    const dg = Math.max(2, ...trades.slice(0, 20).map(t => priceDigits(t.entry)));
+    const tm = s => (s || '').replace('T', ' ').slice(2);
+    let cum = 0;
+    return `<div class="tbl-scroll" style="max-height:440px;overflow-y:auto"><table class="bd"><thead><tr><th>#</th><th>신호봉</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>손익 pt</th><th>R</th><th>누적 pt</th></tr></thead><tbody>${
+      trades.map((t, i) => { cum += t.points; const r = t.risk ? t.points / t.risk : null;
+        return `<tr><td>${i + 1}</td><td>${tm(t.crossTime)}</td><td>${tm(t.entryTime)}</td><td>${tm(t.exitTime)}</td>
+          <td><span class="badge ${t.dir === -1 ? 'S' : 'L'}">${t.dir === -1 ? '매도' : '매수'}</span></td>
+          <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_ALL[t.reason] || esc(t.reason)}</td>
+          <td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td><td class="${cls(r)}">${rTxt(r)}</td>
+          <td class="${cls(cum)}">${cum > 0 ? '+' : ''}${fx(cum, 1)}</td></tr>`; }).join('')
+    }</tbody></table></div>
+    <div class="sub" style="font-size:.74rem;margin-top:6px">손절 크기(1R)는 거래마다 다를 수 있어요. 달러 손익은 손익 pt × 1pt당 금액 × 랏으로 계산하세요.</div>`;
+  }
   function cbComboLabel(R, r) {
     const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => CB_CONDS[c.type].name);
     return names.join(' + ');
@@ -3352,8 +3359,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         }); break;
       case 'bt-import': $('#btFile').click(); break;
       case 'bt-tool': openTool(); break;
-      case 'bt-tool-close': $('#toolCard').hidden = true; break;
-      case 'bt-go-cb': $('#toolCard').hidden = true; $('#cbCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
+      case 'bt-tool-close': bt.toolOpen = false; $('#toolCard').hidden = true; break;
       case 'bt-tool-connect': $('#toolFile').click(); break;
       case 'bt-view': bt.detail = el.dataset.id; renderBTDetail(); $('#btDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
       case 'bt-detail-close': bt.detail = null; renderBTDetail(); break;
@@ -3474,7 +3480,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
     if (!f) return;
     const html = await f.text();
     try { localStorage.setItem(TOOL_KEY, html); } catch (err) { toast('⚠ 도구를 저장할 공간이 부족합니다', 4000); return; }
-    $('#toolBox').innerHTML = ''; openTool(); toast('도구를 연결했습니다');
+    $('#toolBox').innerHTML = ''; renderBT(); openTool(); toast('교육 도구를 연결했습니다');
   });
   $('#mt5File').addEventListener('change', async e => {
     const f = e.target.files[0]; e.target.value = '';

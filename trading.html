@@ -492,7 +492,7 @@
         <h2>백테스트 결과 가져오기</h2>
         <div class="btn-row">
           <button class="btn primary" data-action="bt-import">⬆ MT5 전략테스터 결과 열기</button>
-          <button class="btn" data-action="bt-tool">⚡ 빠른 검증 (1분봉) 열기</button>
+          <button class="btn" data-action="bt-tool">⚡ 빠른 검증 (교육 도구) 열기</button>
         </div>
         <input type="file" id="btFile" accept=".csv,text/csv" hidden>
         <input type="file" id="toolFile" accept=".html,text/html" hidden>
@@ -2181,8 +2181,8 @@
     const html = toolHTML();
     $('#toolCard').hidden = false;
     if (!html) {
-      $('#toolBox').innerHTML = `<div class="alert info">빠른 검증 도구 파일이 연결되어 있지 않습니다. 교육에서 받은 백테스트 HTML 파일을 한 번 연결하면 다음부터 바로 열립니다.</div>
-        <div class="btn-row" style="margin-top:10px"><button class="btn primary" data-action="bt-tool-connect">도구 파일 연결</button></div>`;
+      $('#toolBox').innerHTML = `<div class="alert info">빠른 검증은 교육에서 따로 받은 백테스트 HTML 파일이 있어야 열리는 별도 도구예요. 그 파일이 없다면 이 화면 맨 위의 <b>조건 백테스트</b>를 쓰세요. 1분봉 CSV만 있으면 되고, 조건도 직접 고를 수 있어요.</div>
+        <div class="btn-row" style="margin-top:10px"><button class="btn primary" data-action="bt-go-cb">↑ 조건 백테스트로 가기</button><button class="btn" data-action="bt-tool-connect">교육 도구 파일 연결</button></div>`;
       return;
     }
     if (!$('#toolFrame')) {
@@ -3353,6 +3353,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       case 'bt-import': $('#btFile').click(); break;
       case 'bt-tool': openTool(); break;
       case 'bt-tool-close': $('#toolCard').hidden = true; break;
+      case 'bt-go-cb': $('#toolCard').hidden = true; $('#cbCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
       case 'bt-tool-connect': $('#toolFile').click(); break;
       case 'bt-view': bt.detail = el.dataset.id; renderBTDetail(); $('#btDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
       case 'bt-detail-close': bt.detail = null; renderBTDetail(); break;

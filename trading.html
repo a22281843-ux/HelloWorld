@@ -2219,6 +2219,12 @@
       text: p => `매수: 종가가 직전 ${p.n}봉 최고가 위 / 매도: 최저가 아래 (매물대 이탈 대용)` },
     move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
       text: p => `직전 ${p.n}봉 동안 ${p.pts}pt 이상 반대로 움직임 (매수: 하락 뒤 / 매도: 상승 뒤)` },
+    expand: { name: '밴드 확장', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b1' }, { k: 'look', label: '몇 봉 전보다 넓음', def: 1 }],
+      text: p => `${p.band === 'b2' ? '②' : '①'} 밴드 폭이 ${p.look}봉 전보다 넓어짐 (매수·매도 공통)` },
+    strong: { name: '강한 캔들 (꼬리 없는 장대)', params: [{ k: 'body', label: '몸통 ≥ 봉 길이 %', def: 60 }, { k: 'tail', label: '진행 방향 꼬리 ≤ %', def: 15 }],
+      text: p => `매수: 몸통이 봉의 ${p.body}% 이상인 양봉, 윗꼬리 ${p.tail}% 이하 / 매도: 같은 조건의 음봉, 아랫꼬리 ${p.tail}% 이하` },
+    stack: { name: '이평 배열 (20·60·120)', params: [{ k: 'mode', label: '기준', opts: [['with', '진입 방향과 같음'], ['against', '진입 방향과 반대']], def: 'with' }],
+      text: p => p.mode === 'against' ? '매수: 역배열(20<60<120) 중 / 매도: 정배열 중' : '매수: 정배열(20>60>120) / 매도: 역배열(20<60<120)' },
     time: { name: '시간대 (한국 시간)', params: [{ k: 'from', label: '시작 시', def: 16 }, { k: 'to', label: '끝 시', def: 2 }],
       text: p => `한국 시간 ${p.from}시 ~ ${p.to}시 사이 신호만` },
   };
@@ -2409,7 +2415,8 @@
       kstH[i] = new Date(kstOf(B.t[i], meta)).getUTCHours();
     }
     return { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
-      b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: sma(src(ma.src), pi(ma.n, 20)) };
+      b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: sma(src(ma.src), pi(ma.n, 20)),
+      smaN: (() => { const c = {}; return n => c[n] || (c[n] = sma(B.c, n)); })() };
   }
   function bandTest(X, mode, fn) {
     return mode === 'both' ? fn(X.b1) && fn(X.b2) : mode === 'b1' ? fn(X.b1) : mode === 'b2' ? fn(X.b2) : fn(X.b1) || fn(X.b2);
@@ -2443,6 +2450,21 @@
         for (let j = i - n; j < (c.type === 'nbrk' ? i : i + 1); j++) { if (B.h[j] > mx) mx = B.h[j]; if (B.l[j] < mn) mn = B.l[j]; }
         if (c.type === 'nbrk') return buy ? cl > mx : cl < mn;
         return (buy ? mx - l : h - mn) / X.pt >= (num(p.pts) ?? 0);
+      }
+      case 'expand': {
+        const b = p.band === 'b2' ? X.b2 : X.b1, j = i - Math.max(1, Math.round(num(p.look) ?? 1));
+        return j >= 0 && (b.u[i] - b.l[i]) > (b.u[j] - b.l[j]);
+      }
+      case 'strong': {
+        const rng = h - l; if (!(rng > 0)) return false;
+        const body = Math.abs(cl - o), tail = buy ? h - cl : cl - l;
+        return (buy ? cl > o : cl < o) && body >= rng * (num(p.body) ?? 60) / 100 && tail <= rng * (num(p.tail) ?? 15) / 100;
+      }
+      case 'stack': {
+        const a = X.smaN(20)[i], b = X.smaN(60)[i], c = X.smaN(120)[i];
+        if (!(a === a && b === b && c === c)) return false;
+        const up = a > b && b > c, dn = a < b && b < c;
+        return (p.mode === 'against') !== buy ? up : dn;
       }
       case 'time': {
         const hr = X.kstH[i], f = Math.round(num(p.from) ?? 0), t = Math.round(num(p.to) ?? 24);

@@ -235,6 +235,7 @@
     .cb-cond + .cb-cond { margin-top: 6px; }
     .cb-cond.off { opacity: .5; }
     .cb-cond.opt { border-style: dashed; border-color: rgba(129,140,248,.5); }
+    .cb-cond.not { border-color: rgba(248,113,113,.45); }
     .cb-cond select, .cb-cond input { padding: 7px 9px; font-size: 14px; }
     .cb-cond .cb-name { font-weight: 700; font-size: .9rem; }
     .cb-cond .cb-name .lt { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
@@ -2193,7 +2194,7 @@
   const SRC_OPTS = [['close', '종가'], ['open', '시가'], ['high', '고가'], ['low', '저가']];
   const BAND_OPTS = [['any', '①② 중 하나라도'], ['both', '①② 둘 다'], ['b1', '①만'], ['b2', '②만']];
   const BAND_KO = Object.fromEntries(BAND_OPTS);
-  const ROLE_KO = { req: '필수', opt: '비교', off: '끔' };
+  const ROLE_KO = { req: '필수', opt: '비교', not: '제외', off: '끔' };
   // 조건은 매수 기준으로 정의, 매도는 위아래를 뒤집어 적용
   const CB_CONDS = {
     ma: { name: '이평 방향', params: [
@@ -2214,9 +2215,12 @@
     hold: { name: '저점(고점) 지킴', params: [], text: () => '매수: 저가가 직전 봉 저가 이상 / 매도: 고가가 직전 봉 고가 이하' },
     turn: { name: '밴드 기울기 멈춤', params: [{ k: 'line', label: '선', opts: [['b1o', '① 바깥선'], ['mid', '① 중심선'], ['b2o', '② 바깥선']], def: 'b1o' }],
       text: p => `매수: ${p.line === 'mid' ? '① 중심선' : p.line === 'b2o' ? '② 하단선' : '① 하단선'}이 더 내려가지 않음 / 매도: ${p.line === 'mid' ? '중심선' : '상단선'}이 더 올라가지 않음` },
-    daybrk: { name: '당일 고점·저점 돌파', params: [], text: () => '매수: 당일 고점 위로 / 매도: 당일 저점 아래로 (MT5 일봉 기준)' },
-    nbrk: { name: '최근 N봉 고점·저점 돌파', params: [{ k: 'n', label: 'N봉', def: 20 }],
-      text: p => `매수: 종가가 직전 ${p.n}봉 최고가 위 / 매도: 최저가 아래 (매물대 이탈 대용)` },
+    daybrk: { name: '당일 고점·저점 돌파', params: [{ k: 'side', label: '방향', opts: [['same', '진입 방향으로 돌파'], ['opp', '반대 방향으로 이탈']], def: 'same' }],
+      text: p => p.side === 'opp' ? '매수: 당일 저점 아래로 이탈 / 매도: 당일 고점 위로 이탈 (MT5 일봉 기준)' : '매수: 당일 고점 위로 / 매도: 당일 저점 아래로 (MT5 일봉 기준)' },
+    nbrk: { name: '최근 N봉 고점·저점 돌파', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'side', label: '방향', opts: [['same', '진입 방향으로 돌파'], ['opp', '반대 방향으로 이탈']], def: 'same' }],
+      text: p => p.side === 'opp' ? `매수: 종가가 직전 ${p.n}봉 최저가 아래로 이탈 / 매도: 최고가 위로 이탈 (박스 이탈)` : `매수: 종가가 직전 ${p.n}봉 최고가 위 / 매도: 최저가 아래 (매물대 이탈 대용)` },
+    maside: { name: '이평 위·아래 위치', params: [{ k: 'mode', label: '기준', opts: [['with', '매수=이평 위 · 매도=이평 아래'], ['against', '매수=이평 아래 · 매도=이평 위']], def: 'with' }],
+      text: p => p.mode === 'against' ? '매수: 종가가 이평 아래 / 매도: 종가가 이평 위' : '매수: 종가가 이평 위 / 매도: 종가가 이평 아래 (추세 쪽에서 눌림)' },
     move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
       text: p => `직전 ${p.n}봉 동안 ${p.pts}pt 이상 반대로 움직임 (매수: 하락 뒤 / 매도: 상승 뒤)` },
     expand: { name: '밴드 확장', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b1' }, { k: 'look', label: '몇 봉 전보다 넓음', def: 1 }],
@@ -2443,12 +2447,13 @@
         const a = p.line === 'mid' ? X.b1.m : p.line === 'b2o' ? (buy ? X.b2.l : X.b2.u) : (buy ? X.b1.l : X.b1.u);
         return buy ? a[i] >= a[i - 1] : a[i] <= a[i - 1];
       }
-      case 'daybrk': return buy ? h > X.dayHi[i] : l < X.dayLo[i];
+      case 'daybrk': { const up = p.side === 'opp' ? !buy : buy; return up ? h > X.dayHi[i] : l < X.dayLo[i]; }
+      case 'maside': { const m = X.ma[i]; if (!(m === m)) return false; return (p.mode === 'against') !== buy ? cl > m : cl < m; }
       case 'nbrk': case 'move': {
         const n = Math.max(1, Math.round(num(p.n) ?? 20)); if (i < n) return false;
         let mx = -Infinity, mn = Infinity;
         for (let j = i - n; j < (c.type === 'nbrk' ? i : i + 1); j++) { if (B.h[j] > mx) mx = B.h[j]; if (B.l[j] < mn) mn = B.l[j]; }
-        if (c.type === 'nbrk') return buy ? cl > mx : cl < mn;
+        if (c.type === 'nbrk') return (p.side === 'opp' ? !buy : buy) ? cl > mx : cl < mn;
         return (buy ? mx - l : h - mn) / X.pt >= (num(p.pts) ?? 0);
       }
       case 'expand': {
@@ -2528,7 +2533,7 @@
   async function cbRun() {
     const cfg = cb.cfg, D = await cbGetData(cb.data);
     if (!D) { toast('먼저 1분봉 CSV를 불러오세요', 3000); return; }
-    const req = cfg.conds.filter(c => c.role === 'req'), opt = cfg.conds.filter(c => c.role === 'opt');
+    const req = cfg.conds.filter(c => c.role === 'req' || c.role === 'not'), opt = cfg.conds.filter(c => c.role === 'opt');
     if (!req.length && !opt.length) { toast('조건을 하나 이상 추가하세요'); return; }
     if (opt.length > CB_MAX_OPT) { toast(`비교 조건은 ${CB_MAX_OPT}개까지 가능합니다 (${2 ** CB_MAX_OPT}개 조합)`, 3500); return; }
     if (cfg.exit.sl === 'fixed' && !(num(cfg.exit.slPts) > 0)) { toast('손절 pt를 입력하세요'); return; }
@@ -2543,7 +2548,7 @@
       const and = (set, s) => {
         if (!sides.includes(s)) return null;
         const out = new Uint8Array(X.N).fill(1);
-        for (const c of set) { const a = arr.get(c.id)[s]; for (let i = 0; i < X.N; i++) out[i] &= a[i]; }
+        for (const c of set) { const a = arr.get(c.id)[s], neg = c.role === 'not'; for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
         return out;
       };
       const d0 = kstOf(D.t[0], meta), d1 = kstOf(D.t[D.t.length - 1], meta);
@@ -2650,7 +2655,7 @@
           <div class="field"><label>이평 기준 가격</label><select data-cb="ind" data-b="ma" data-k="src">${cbOpts(SRC_OPTS, cfg.ind.ma.src)}</select></div>
         </div></details>
 
-      <div class="cb-sec"><span>④ 조건 <span class="hint" style="font-weight:600">필수 = 항상 적용 · 비교 = 넣고/빼는 조합을 모두 테스트 (${optN}/${CB_MAX_OPT}개 → ${optN ? 2 ** optN : 1}가지)</span></span>
+      <div class="cb-sec"><span>④ 조건 <span class="hint" style="font-weight:600">필수 = 항상 적용 · 비교 = 넣고/빼는 조합을 모두 테스트 · 제외 = 이 조건이 맞으면 진입 안 함 (${optN}/${CB_MAX_OPT}개 → ${optN ? 2 ** optN : 1}가지)</span></span>
         <select id="cbAdd" style="width:auto"><option value="">+ 조건 추가</option>${Object.entries(CB_CONDS).map(([k, d]) => `<option value="${k}">${esc(d.name)}</option>`).join('')}</select></div>
       ${condRows || '<div class="empty" style="padding:16px">아직 조건이 없습니다. <b>+ 조건 추가</b>에서 고르거나, 전략 카드를 선택하거나, 조건을 붙여넣으세요.</div>'}
 
@@ -2749,7 +2754,7 @@
     <div class="sub" style="font-size:.74rem;margin-top:6px">손익 $ = 손익 pt × 1pt당 금액 × 랏 − 수수료. 손익 pt에는 비용(스프레드) pt가 이미 빠져 있어요. 손절 크기(1R)는 거래마다 다를 수 있어요.</div>`;
   }
   function cbComboLabel(R, r) {
-    const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => CB_CONDS[c.type].name);
+    const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => (c.role === 'not' ? '제외:' : '') + CB_CONDS[c.type].name);
     return names.join(' + ');
   }
   function cbKeep() {
@@ -2759,7 +2764,7 @@
     const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : 'TP 없음';
     const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
       sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
-      from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: 'req' })) },
+      from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: c.role === 'not' ? 'not' : 'req' })) },
       lots: R.mm.mode === 'lots' ? num(R.mm.lots) : null,
       name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : 'SL 신호봉'} / ${tpTxt} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`} · ${R.from.slice(0, 10)}~${R.to.slice(0, 10)}`,
       trades: r.trades.map(t => ({ ...t })) };
@@ -2772,7 +2777,7 @@
     const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
     const keep = new Set([...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => c.id));
     const optIds = new Set(R.opt.map(c => c.id));
-    cb.cfg.conds.forEach(c => { if (keep.has(c.id)) c.role = 'req'; else if (optIds.has(c.id)) c.role = 'off'; });
+    cb.cfg.conds.forEach(c => { if (optIds.has(c.id)) c.role = keep.has(c.id) ? 'req' : 'off'; });
     cbSave(); renderCB();
     toast('선택한 조합을 필수로, 나머지 비교 조건은 끔으로 바꿨습니다' + (cb.stId ? '. 전략 카드에 저장하려면 "전략 카드에 조건 저장"을 누르세요' : ''), 4000);
   }

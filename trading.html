@@ -2219,6 +2219,7 @@
       text: p => p.side === 'opp' ? '매수: 당일 저점 아래로 이탈 / 매도: 당일 고점 위로 이탈 (MT5 일봉 기준)' : '매수: 당일 고점 위로 / 매도: 당일 저점 아래로 (MT5 일봉 기준)' },
     nbrk: { name: '최근 N봉 고점·저점 돌파', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'side', label: '방향', opts: [['same', '진입 방향으로 돌파'], ['opp', '반대 방향으로 이탈']], def: 'same' }],
       text: p => p.side === 'opp' ? `매수: 종가가 직전 ${p.n}봉 최저가 아래로 이탈 / 매도: 최고가 위로 이탈 (박스 이탈)` : `매수: 종가가 직전 ${p.n}봉 최고가 위 / 매도: 최저가 아래 (매물대 이탈 대용)` },
+    matouch: { name: '이평 터치 (눌림)', params: [], text: () => '캔들이 이평에 닿음 (매수: 위에서 내려와 닿음 / 매도: 아래에서 올라와 닿음)' },
     maside: { name: '이평 위·아래 위치', params: [{ k: 'mode', label: '기준', opts: [['with', '매수=이평 위 · 매도=이평 아래'], ['against', '매수=이평 아래 · 매도=이평 위']], def: 'with' }],
       text: p => p.mode === 'against' ? '매수: 종가가 이평 아래 / 매도: 종가가 이평 위' : '매수: 종가가 이평 위 / 매도: 종가가 이평 아래 (추세 쪽에서 눌림)' },
     move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
@@ -2448,6 +2449,7 @@
         return buy ? a[i] >= a[i - 1] : a[i] <= a[i - 1];
       }
       case 'daybrk': { const up = p.side === 'opp' ? !buy : buy; return up ? h > X.dayHi[i] : l < X.dayLo[i]; }
+      case 'matouch': { const m = X.ma[i]; if (!(m === m)) return false; return l <= m && h >= m && (buy ? o >= m || cl >= m : o <= m || cl <= m); }
       case 'maside': { const m = X.ma[i]; if (!(m === m)) return false; return (p.mode === 'against') !== buy ? cl > m : cl < m; }
       case 'nbrk': case 'move': {
         const n = Math.max(1, Math.round(num(p.n) ?? 20)); if (i < n) return false;

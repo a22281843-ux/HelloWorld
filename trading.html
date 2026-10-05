@@ -672,7 +672,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.12.0';
+  const APP_VERSION = 'v1.13.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2278,7 +2278,7 @@
     return { dir: 'both', tf: 'H1',
       ind: { b1: { n: 20, k: 2, src: 'close' }, b2: { n: 4, k: 4, src: 'open' }, ma: { n: 20, src: 'close' } },
       conds: [], minScore: 3, scoreV: 2,
-      exit: { sl: 'fixed', slPts: 50, slPct: 1, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, tpPct: 2, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0, be: 0 } };
+      exit: { sl: 'fixed', slPts: 50, slPct: 1, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, tpPct: 2, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: true, cost: 0, be: 0 } };
   }
   function cbNorm(c) { c = c && typeof c === 'object' ? c : {}; return cbNormScore(cbNormBase(c), c); }
   function cbNormBase(c) {
@@ -2287,7 +2287,7 @@
     return { dir: ['buy', 'sell', 'both'].includes(c.dir) ? c.dir : d.dir, tf: CB_TFS.some(x => x[0] === c.tf) ? c.tf : d.tf,
       ind: { b1: { ...d.ind.b1, ...(ind.b1 || {}) }, b2: { ...d.ind.b2, ...(ind.b2 || {}) }, ma: { ...d.ind.ma, ...(ind.ma || {}) } },
       conds: (Array.isArray(c.conds) ? c.conds : []).filter(x => x && CB_CONDS[x.type]).map(x => cbNewCond(x.type, x)),
-      exit: { ...d.exit, ...(c.exit || {}) } };
+      exit: { ...d.exit, ...(c.exit || {}), ind: 'none', be: 0, maxBars: 0, dayEnd: true } };   // 청산은 손절·익절 + 항상 당일 청산
   }
   // 예전 코드의 minScore(점수 조건 개수) → 근거 카테고리 총개수(필수 포함)로 바꿔 읽음
   function cbNormScore(cfg, raw) {
@@ -2316,7 +2316,7 @@
     const m = cb.syms[name]; if (!m) return null;
     if (!(num(m.point) > 0)) m.point = cbPointDefault(name);
     if (!m.tz && BARS[name]) { const d = cbDetectTZ(BARS[name]); if (d) { m.gmt = d.gmt; m.dst = d.dst; m.tz = 'auto'; } else m.tz = 'fail'; cbSave(); }
-    if (m.pv == null || m.comm == null) { const d = cbSymDefaults(name); if (m.pv == null) m.pv = d.pv; if (m.comm == null) m.comm = d.comm; }
+    { const d = cbSymDefaults(name); m.pv = d.pv; m.comm = d.comm; }   // 1랏 손익·수수료는 항상 설정 탭 종목 사양 값
     return m;
   }
   // 거래별 랏·달러 손익·잔고 (고정 랏 또는 잔고의 위험 %)
@@ -2469,7 +2469,7 @@
       kstH[i] = new Date(kstOf(B.t[i], meta)).getUTCHours();
     }
     const X_MA = sma(src(ma.src), pi(ma.n, 20));
-    const X_SELF = { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
+    const X_SELF = { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH, ind: cfg.ind,
       tf: cfg.tf, tfMs: tfMin * 60e3,
       ctxFor: tf => { if (!cache[cfg.tf]) cache[cfg.tf] = X_SELF; return cache[tf] || (cache[tf] = cbContext(D, { ...cfg, tf }, meta, cache)); },
       b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: X_MA,
@@ -2707,12 +2707,19 @@
       const risk = (E - slP) * s;
       if (!(risk > 0)) continue;
       const tpP = ex.tp === 'r' && tpR > 0 ? E + s * risk * tpR : ex.tp === 'fixed' && tpPts > 0 ? E + s * tpPts * pt : ex.tp === 'pct' && tpPct > 0 ? E * (1 + s * tpPct / 100) : NaN;
+      // 익절 '밴드·이평 닿음': 봉마다 목표가가 바뀜. 시가로 계산하는 선은 그 봉 값, 아니면 직전 마감 봉 값 (실시간으로 알 수 있는 값)
+      const dynTp = ex.tp === 'band2' || ex.tp === 'ma';
+      const tpLine = ex.tp === 'band2' ? (s > 0 ? X.b2.u : X.b2.l) : X.ma, tpCur = (ex.tp === 'band2' ? X.ind.b2.src : X.ind.ma.src) === 'open';
       let k = j, m = m0, exitP = NaN, reason = 'END', stop = slP, beMoved = false;
       const beAt = beR > 0 ? E + s * risk * beR : NaN;
       for (; m < M; m++) {
         const o = D.o[m], h = D.h[m], l = D.l[m];
         if (s > 0 ? l <= stop : h >= stop) { exitP = s > 0 ? Math.min(o, stop) : Math.max(o, stop); reason = beMoved ? 'BE' : 'SL'; break; }
         if (tpP === tpP && (s > 0 ? h >= tpP : l <= tpP)) { exitP = s > 0 ? Math.max(o, tpP) : Math.min(o, tpP); reason = 'TP'; break; }
+        if (dynTp) {
+          const lv = tpLine[tpCur ? k : k - 1];
+          if (lv === lv && (s > 0 ? lv > E && h >= lv : lv < E && l <= lv)) { exitP = s > 0 ? Math.max(o, lv) : Math.min(o, lv); reason = 'TP'; break; }
+        }
         if (!beMoved && beAt === beAt && (s > 0 ? h >= beAt : l <= beAt)) { stop = E; beMoved = true; }   // 다음 1분봉부터 손절을 본절로
         if (ex.dayEnd && m + 1 < M && dayOf(D.t[m + 1]) !== dayOf(D.t[m])) { exitP = D.c[m]; reason = 'DAY'; break; }
         if (m === B.e[k]) {
@@ -2943,23 +2950,17 @@
       <div class="cb-grid">
         <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['pct', '진입가의 %'], ['candle', '신호봉 꼬리 끝 + 여유'], ['swing', '직전 저점·고점 + 여유']], ex.sl)}</select></div>
         ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : ex.sl === 'pct' ? `<div class="field"><label>손절 %</label>${cbNum('data-cb="ex" data-k="slPct"', ex.slPct)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
-        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['pct', '진입가의 %'], ['none', '없음']], ex.tp)}</select></div>
+        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['band2', `반대쪽 ② 밴드 닿음 (${cfg.ind.b2.n}/${cfg.ind.b2.k})`], ['ma', `${cfg.ind.ma.n} 이평선 닿음`], ['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['pct', '진입가의 %'], ['none', '없음']], ex.tp)}</select></div>
         ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ex.tp === 'pct' ? `<div class="field"><label>익절 %</label>${cbNum('data-cb="ex" data-k="tpPct"', ex.tpPct)}</div>` : ''}
-        <div class="field"><label>지표 청산 (봉 마감)</label><select data-cb="ex" data-k="ind">${cbOpts([['none', '안 함'], ['sig', '반대 신호 (같은 조건의 반대 방향)'], ['opp', '반대쪽 밴드 찌름'], ['mid', '① 중심선 닿음'], ['ma', '이평 닿음']], ex.ind)}</select></div>
-        ${ex.ind === 'opp' ? `<div class="field"><label>반대쪽 밴드</label><select data-cb="ex" data-k="indBand">${cbOpts(BAND_OPTS, ex.indBand)}</select></div>` : ''}
-        <div class="field"><label>본절 이동: 몇 R 가면 (0=안 함)</label>${cbNum('data-cb="ex" data-k="be"', ex.be ?? 0)}</div>
-        <div class="field"><label>최대 보유 봉 (0=없음)</label>${cbNum('data-cb="ex" data-k="maxBars"', ex.maxBars)}</div>
-        <div class="field"><label>당일 청산</label><select data-cb="ex" data-k="dayEnd">${cbOpts([['0', '안 함'], ['1', 'MT5 하루 끝에 청산']], ex.dayEnd ? '1' : '0')}</select></div>
       </div>
+      <div class="sub" style="font-size:.74rem;margin-top:6px">손절·익절에 닿지 않으면 <b>MT5 하루 끝에 항상 청산</b>해요 (당일 청산).${ex.tp === 'band2' || ex.tp === 'ma' ? ` 익절선은 1분봉으로 판정하고, ${ex.tp === 'band2' ? (cfg.ind.b2.src === 'open' ? '② 밴드는 시가로 계산해서 그 봉의 값' : '② 밴드는 직전 마감 봉의 값') : (cfg.ind.ma.src === 'open' ? '이평은 그 봉의 값' : '이평은 직전 마감 봉의 값')}을 써요. 익절선이 진입가보다 불리한 쪽에 있으면 그 봉에선 익절하지 않아요.` : ''}</div>
       <div class="cb-sec">⑥ 랏 · 금액</div>
       <div class="cb-grid">
         <div class="field"><label>랏 방식</label><select data-cb="mm" data-k="mode">${cbOpts([['lots', '고정 랏'], ['risk', '잔고의 위험 % (손절 기준)']], mm.mode)}</select></div>
         ${mm.mode === 'risk' ? `<div class="field"><label>거래당 위험 %</label>${cbNum('data-cb="mm" data-k="risk"', mm.risk)}</div>` : `<div class="field"><label>랏 수</label>${cbNum('data-cb="mm" data-k="lots"', mm.lots)}</div>`}
         <div class="field"><label>시작 잔고 $</label>${cbNum('data-cb="mm" data-k="balance"', mm.balance)}</div>
-        ${meta ? `<div class="field"><label>1랏 · 가격 1.0 변동 손익 $</label>${cbNum('data-cb="sym" data-k="pv"', meta.pv)}</div>
-        <div class="field"><label>수수료 $/랏 (왕복)</label>${cbNum('data-cb="sym" data-k="comm"', meta.comm)}</div>` : ''}
       </div>
-      ${meta ? `<div class="sub" style="font-size:.74rem;margin-top:6px">1pt 움직이면 1랏당 <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1), 2)}</b>${mm.mode === 'lots' ? ` · ${num(mm.lots) || 0}랏이면 1pt = <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1) * (num(mm.lots) || 0), 2)}</b>` : ' · 랏은 거래마다 (잔고 × 위험 %) ÷ 손절 금액으로 계산, 0.01 단위 내림'}. 기본값은 설정 탭의 종목 사양에서 가져와요.</div>` : ''}
+      ${meta ? `<div class="sub" style="font-size:.74rem;margin-top:6px">1pt 움직이면 1랏당 <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1), 2)}</b>${mm.mode === 'lots' ? ` · ${num(mm.lots) || 0}랏이면 1pt = <b>$${fx((num(meta.point) || 1) * (num(meta.pv) ?? 1) * (num(mm.lots) || 0), 2)}</b>` : ' · 랏은 거래마다 (잔고 × 위험 %) ÷ 손절 금액으로 계산, 0.01 단위 내림'}. 1랏 손익·수수료는 설정 탭의 종목 사양 값을 써요 (바꾸려면 설정 → 종목 사양).</div>` : ''}
       <div class="btn-row" style="margin-top:16px"><span id="cbRunWrap"></span></div>
       <details class="help" style="margin-top:12px"><summary>이 백테스트는 이렇게 계산해요</summary>
         <ul>
@@ -3124,7 +3125,7 @@
     const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
     if (!r.trades.length) { toast('거래가 없는 조합은 저장할 수 없어요'); return; }
     const st = cb.stId && findSt(cb.stId), ex = R.cfg.exit;
-    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : ex.tp === 'pct' ? `TP ${ex.tpPct}%` : 'TP 없음';
+    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : ex.tp === 'pct' ? `TP ${ex.tpPct}%` : ex.tp === 'band2' ? 'TP 반대쪽 ②밴드' : ex.tp === 'ma' ? `TP ${R.cfg.ind.ma.n}이평` : 'TP 없음';
     const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
       sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
       from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: c.role === 'not' ? 'not' : 'req' })).concat((R.score || []).map(c => ({ ...c }))) },

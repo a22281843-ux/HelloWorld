@@ -487,6 +487,12 @@
         <input type="file" id="cbFile" accept=".csv,.txt,text/csv" hidden>
       </div>
 
+      <div class="card" id="cmpAllCard">
+        <h2><span>전략 카드 전체 비교</span><span class="hint">조건이 저장된 카드를 같은 데이터·기간으로 한 번에</span></h2>
+        <div id="cmpAll"><div class="sub" style="font-size:.8rem">위 ① 데이터·기간·⑥ 랏을 정한 뒤 <b>▶ 전체 비교 실행</b>을 누르세요. 카드마다 필수·점수·제외 조건으로 돌리고(비교 조건은 빼고), 앞 절반·뒤 절반 기간에서도 각각 좋았는지 확인해요.</div></div>
+        <div class="btn-row" style="margin-top:12px"><button class="btn primary" data-action="cmp-all">▶ 전체 비교 실행</button></div>
+      </div>
+
       <div class="card" id="cbResCard" hidden>
         <h2><span>조건 조합 결과</span><span class="hint" id="cbResHint"></span></h2>
         <div id="cbRes"></div>
@@ -2681,6 +2687,58 @@
     return trades;
   }
 
+  // 한 전략 조건(비교 조건 제외)으로 거래 목록 계산
+  function cbEvalCfg(D, meta, cfg, range) {
+    const req = cfg.conds.filter(c => c.role === 'req' || c.role === 'not'), score = cfg.conds.filter(c => c.role === 'score');
+    if (!req.length && !score.length) return null;
+    const minScore = Math.max(1, Math.round(num(cfg.minScore) ?? 3));
+    const X = cbContext(D, cfg, meta), sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
+    const sig = {};
+    for (const s of [1, -1]) {
+      if (!sides.includes(s)) { sig[s] = null; continue; }
+      const out = new Uint8Array(X.N).fill(1), cats = new Uint8Array(X.N); let base = 0;
+      for (const c of req) { const a = condArray(X, c, s), neg = c.role === 'not'; if (!neg) base |= catBit(c); for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
+      const sb = new Uint8Array(X.N);
+      for (const c of score) { const a = condArray(X, c, s), bit = catBit(c); if (bit) for (let i = 0; i < X.N; i++) if (a[i]) sb[i] |= bit; }
+      for (let i = 0; i < X.N; i++) { cats[i] = base | sb[i]; if (score.length && catCount(cats[i]) < minScore) out[i] = 0; }
+      out.cats = cats; sig[s] = out;
+    }
+    return cbSimulate(X, D, cfg.exit, sig[1], sig[-1], range);
+  }
+  async function cbCompareAll() {
+    const D = await cbGetData(cb.data);
+    if (!D) { toast('먼저 1분봉 CSV를 불러오세요', 3000); return; }
+    const cards = S.strategies.filter(x => x.btCfg && !x.example);
+    if (!cards.length) { toast('백테스트 조건이 저장된 전략 카드가 없어요', 3000); return; }
+    const meta = cbMeta(cb.data) || { point: 1, gmt: 2, dst: true, pv: 1, comm: 0 };
+    const d0 = kstOf(D.t[0], meta), d1 = kstOf(D.t[D.t.length - 1], meta);
+    const pf = cb.per.from ? Date.parse(cb.per.from + 'T00:00Z') : NaN, pt2 = cb.per.to ? Date.parse(cb.per.to + 'T23:59Z') : NaN;
+    const range = [isFinite(pf) ? Math.max(pf, d0) : d0, isFinite(pt2) ? Math.min(pt2, d1) : d1], mid = (range[0] + range[1]) / 2;
+    const months = monthsBetween(isoOf(range[0]), isoOf(range[1]));
+    $('#cmpAll').innerHTML = `<div class="sub">계산 중… (${cards.length}개)</div>`;
+    await new Promise(r => setTimeout(r, 30));
+    const rows = [];
+    for (const st of cards) {
+      let trades;
+      try { trades = cbEvalCfg(D, meta, cbNorm(clone(st.btCfg)), range); } catch (e) { trades = null; }
+      if (!trades) continue;
+      const R = t => t.points / t.risk, ss = arr => seriesStats(arr.map(t => t.points), arr.map(R), null);
+      const all = seriesStats(trades.map(t => t.points), trades.map(R), months);
+      const half = arr => { const x = ss(arr); return { n: x.n, expR: x.expR }; };
+      const h1 = half(trades.filter(t => Date.parse(t.entryTime + 'Z') < mid)), h2 = half(trades.filter(t => Date.parse(t.entryTime + 'Z') >= mid));
+      const money = cbApplyMoney(trades, { ...cb.mm }, meta);
+      const verdict = all.n < 30 ? ['표본 적음', 'warn-c'] : (all.expR > 0 && h1.expR > 0 && h2.expR > 0) ? ['✅ 유력', 'up'] : all.expR > 0 ? ['△ 기간 따라 다름', 'warn-c'] : ['❌ 손실', 'down'];
+      rows.push({ st, all, h1, h2, money, verdict });
+    }
+    rows.sort((a, b) => ((b.all.n >= 30) - (a.all.n >= 30)) || ((b.all.expR ?? -99) - (a.all.expR ?? -99)));
+    const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
+    $('#cmpAll').innerHTML = `<div class="sub" style="font-size:.76rem;margin-bottom:8px">${esc(cb.data)} · ${isoOf(range[0]).slice(0, 10)} ~ ${isoOf(range[1]).slice(0, 10)} · 기대값 높은 순. 행을 누르면 그 카드를 조건 백테스트로 불러와요.</div>
+      <div class="tbl-scroll"><table class="bd cmp cb-res"><thead><tr><th style="text-align:left">전략 카드</th><th>판정</th><th>거래</th><th>월평균</th><th>승률</th><th>손익비</th><th>PF</th><th>기대값</th><th>앞 절반</th><th>뒤 절반</th><th>최대 낙폭</th><th>순손익 $</th></tr></thead><tbody>
+      ${rows.map(r => `<tr data-action="cmp-pick" data-id="${r.st.id}"><td class="lbl-c">${esc(r.st.name)}</td><td class="${r.verdict[1]}" style="font-family:inherit">${r.verdict[0]}</td><td>${r.all.n}건</td><td>${r.all.perMonth == null ? '—' : r.all.perMonth.toFixed(1)}</td><td>${pct(r.all.winRate, 1)}</td><td>${r.all.payoff == null ? '—' : '1:' + r.all.payoff.toFixed(2)}</td><td>${f2(r.all.pf)}</td><td class="${cls(r.all.expR)}">${rTxt(r.all.expR)}</td><td class="${cls(r.h1.expR)}">${rTxt(r.h1.expR)}<small class="cb-few">${r.h1.n}건</small></td><td class="${cls(r.h2.expR)}">${rTxt(r.h2.expR)}<small class="cb-few">${r.h2.n}건</small></td><td>${r.all.mddR == null ? '—' : '-' + r.all.mddR.toFixed(1) + 'R'}</td><td class="${cls(r.money.total)}">${money(r.money.total)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="sub" style="font-size:.74rem;margin-top:8px"><b>✅ 유력</b> = 거래 30건 이상 + 전체·앞 절반·뒤 절반 모두 기대값 플러스. 승률만 높고 손익비가 낮으면 기대값이 마이너스일 수 있으니 <b>기대값</b>을 먼저 보세요.</div>`;
+  }
+
   async function cbRun() {
     const cfg = cb.cfg, D = await cbGetData(cb.data);
     if (!D) { toast('먼저 1분봉 CSV를 불러오세요', 3000); return; }
@@ -3792,6 +3850,8 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       }
       case 'cb-file': $('#cbFile').click(); break;
       case 'cb-run': if (!cb.busy) cbRun(); break;
+      case 'cmp-all': cbCompareAll(); break;
+      case 'cmp-pick': cbLoadStrategy(el.dataset.id); $('#cbCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
       case 'cb-per': {
         const D = BARS[cb.data], m = cbMeta(cb.data); if (!D || !m) break;
         const d0 = kstOf(D.t[0], m), d1 = kstOf(D.t[D.t.length - 1], m), v = el.dataset.m, day = ms => isoOf(ms).slice(0, 10);

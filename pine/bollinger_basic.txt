@@ -71,19 +71,19 @@ if alert_dc_first
     wait_dc := false
 
 // === 5. 시각화 ===
-plot(sma20, title="20 SMA", color=#F6EC62, linewidth=1)
-plot(sma120, title="120 SMA", color=#5361F5, linewidth=2)
+plot(sma20, title="20 SMA")
+plot(sma120, title="120 SMA", linewidth=2)
 
-plot(upper_band1, title="상단 밴드 1", color=#FFFFFF, linewidth=3)
-plot(lower_band1, title="하단 밴드 1", color=#FFFFFF, linewidth=3)
+plot(upper_band1, title="상단 밴드 1")
+plot(lower_band1, title="하단 밴드 1")
 
-plot(upper_band2, title="상단 밴드 2", color=#D34A4C, linewidth=1)
-plot(lower_band2, title="하단 밴드 2", color=#D34A4C, linewidth=1)
+plot(upper_band2, title="상단 밴드 2", linewidth=1)
+plot(lower_band2, title="하단 밴드 2", linewidth=1)
 
-plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, color=#FFFFFF, title="수축 상단")
-plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, color=#FFFFFF, title="수축 하단")
-plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, color=#F6EC62, title="골크 첫터치")
-plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, color=#D34A4C, title="데크 첫터치")
+plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, title="수축 상단")
+plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, title="수축 하단")
+plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, title="골크 첫터치")
+plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, title="데크 첫터치")
 
 // === 6. 알림 ===
 alertcondition(alert_sq_upper, "1. 수축후 상단터치", "수축원비 매도!")

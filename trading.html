@@ -2291,7 +2291,8 @@
     return { stId: d.stId || '', cfg: cbNorm(d.cfg), data: d.data || '', syms: d.syms || {}, keys: [], res: null, pick: 0, busy: false,
       per: { from: '', to: '', ...(d.per || {}) }, mm: { mode: 'lots', lots: 1, risk: 1, balance: 10000, ...(d.mm || {}) } };
   })();
-  const cbSave = () => { try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms, per: cb.per, mm: cb.mm })); } catch (e) {} };
+  // edited=true: 조건을 고친 경우 → 선택된 전략 카드에도 자동 저장
+  const cbSave = (edited) => { if (edited) { const st = cb.stId && findSt(cb.stId); if (st) { st.btCfg = clone(cb.cfg); st.btSavedAt = new Date().toISOString(); save(); } } try { localStorage.setItem(CB_KEY, JSON.stringify({ stId: cb.stId, cfg: cb.cfg, data: cb.data, syms: cb.syms, per: cb.per, mm: cb.mm })); } catch (e) {} };
   // 종목 사양(설정 탭)에서 1랏당 1.0 가격 변동 손익·수수료 기본값
   function cbSymDefaults(name) { const sp = sym(mapSymbol(name) || name); return { pv: num(sp.pv) ?? 1, comm: num(sp.comm) || 0 }; }
   const cbPointDefault = name => /XAU|GOLD/i.test(name) ? 0.1 : 1;
@@ -2798,11 +2799,11 @@
         <span class="btn-row"><button class="btn sm" data-action="cb-copy">조건 복사</button><button class="btn sm" data-action="cb-paste">조건 붙여넣기</button></span></div>
       <div class="btn-row" style="align-items:center">
         <select id="cbSt" style="width:auto;max-width:100%"><option value="">— 전략 카드 연결 안 함 —</option>${S.strategies.map(x => `<option value="${x.id}" ${x.id === cb.stId ? 'selected' : ''}>${esc(x.name)}${x.btCfg ? ' ✓' : ''}</option>`).join('')}</select>
-        <button class="btn sm" data-action="cb-save-st" ${st ? '' : 'disabled'}>전략 카드에 조건 저장</button>
+        ${st ? `<button class="btn sm" data-action="cb-save-st" title="조건을 고치면 자동 저장돼요. 지금 조건으로 다시 저장할 때만 누르세요">${st.btCfg ? '✓ 자동 저장 중' : '이 조건을 카드에 저장'}</button>` : ''}
         <button class="btn sm" data-action="cb-merge">다른 전략 조건 합치기</button>
         <button class="btn sm" data-action="cb-reset">새로 시작</button>
       </div>
-      <div class="sub" style="font-size:.74rem;margin-top:6px">✓ 표시는 백테스트 조건이 저장된 전략 카드입니다. 고르면 그 조건을 불러옵니다.</div>
+      <div class="sub" style="font-size:.74rem;margin-top:6px">✓ 표시는 조건이 저장된 전략 카드예요. 카드를 고르면 그 조건을 불러오고, 이후 조건을 고치면 <b>그 카드에 자동 저장</b>돼요. 처음 고른 빈 카드는 조건을 한 번이라도 바꾸거나 붙여넣으면 저장돼요.</div>
 
       <div class="cb-sec">③ 진입</div>
       <div class="cb-grid">
@@ -2973,8 +2974,8 @@
     const keep = new Set([...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => c.id));
     const optIds = new Set(R.opt.map(c => c.id));
     cb.cfg.conds.forEach(c => { if (optIds.has(c.id)) c.role = keep.has(c.id) ? 'req' : 'off'; });
-    cbSave(); renderCB();
-    toast('선택한 조합을 필수로, 나머지 비교 조건은 끔으로 바꿨습니다' + (cb.stId ? '. 전략 카드에 저장하려면 "전략 카드에 조건 저장"을 누르세요' : ''), 4000);
+    cbSave(true); renderCB();
+    toast('선택한 조합을 필수로, 나머지 비교 조건은 끔으로 바꿨습니다' + (cb.stId ? ' · 전략 카드에 자동 저장됨' : ''), 4000);
   }
 
   function cbLoadStrategy(id) {
@@ -2998,7 +2999,7 @@
           const same = cb.cfg.conds.some(x => x.type === c.type && JSON.stringify(x.p) === JSON.stringify(c.p));
           if (!same) { cb.cfg.conds.push(cbNewCond(c.type, { p: c.p, role: 'opt' })); added++; }
         }
-        closeDialog(); cbSave(); renderCB();
+        closeDialog(); cbSave(true); renderCB();
         toast(added ? `조건 ${added}개를 비교 역할로 추가했습니다` : '새로 추가할 조건이 없었습니다 (이미 같은 조건이 있음)', 3500);
       } }]);
   }
@@ -3012,7 +3013,7 @@
           const d = JSON.parse(txt.slice(a, b + 1));
           const cfg = cbNorm(d.cfg || d);
           if (!cfg.conds.length) throw new Error('조건이 없습니다');
-          cb.cfg = cfg; cb.res = null; closeDialog(); cbSave(); renderCB(); renderCBRes();
+          cb.cfg = cfg; cb.res = null; closeDialog(); cbSave(true); renderCB(); renderCBRes();
           toast(`조건 ${cfg.conds.length}개를 불러왔습니다${d.name ? ' · ' + d.name : ''}`, 3000);
         } catch (e) { toast('⚠ 조건 형식을 읽지 못했습니다: ' + e.message, 4000); }
       } }]);
@@ -3034,7 +3035,7 @@
       case 'mm': cb.mm[k] = t.tagName === 'SELECT' ? t.value : val; break;
       default: return;
     }
-    cbSave(); renderCB();
+    cbSave(['role', 'cat', 'p', 'cfg', 'ind', 'ex'].includes(t.dataset.cb)); renderCB();
   }
 
   // 전략 카드에 붙는 조건 요약
@@ -3715,7 +3716,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         else { const e = new Date(d1); e.setUTCMonth(e.getUTCMonth() - +v); cb.per = { from: day(Math.max(d0, e.getTime())), to: day(d1) }; }
         cbSave(); renderCB(); break;
       }
-      case 'cb-del': cb.cfg.conds.splice(+el.dataset.i, 1); cbSave(); renderCB(); break;
+      case 'cb-del': cb.cfg.conds.splice(+el.dataset.i, 1); cbSave(true); renderCB(); break;
       case 'cb-pick': cb.pick = +el.dataset.i; renderCBRes(); break;
       case 'cb-keep': cbKeep(); break;
       case 'cb-adopt': cbAdopt(); break;
@@ -3848,7 +3849,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
   $('#btSetup').addEventListener('change', () => { bt.setupPicked = true; renderBTCompare(); });
   $('#cbRoot').addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'cbAdd') { if (t.value) { cb.cfg.conds.push(cbNewCond(t.value)); cbSave(); renderCB(); } return; }
+    if (t.id === 'cbAdd') { if (t.value) { cb.cfg.conds.push(cbNewCond(t.value)); cbSave(true); renderCB(); } return; }
     if (t.id === 'cbSt') { cbLoadStrategy(t.value); return; }
     if (t.id === 'cbData') { cb.data = t.value; cb.res = null; cbSave(); renderCB(); renderCBRes(); return; }
     if (t.dataset.cb) cbInput(t);

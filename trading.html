@@ -3134,6 +3134,7 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
       <div class="btn-row">${study.mode === 'strategy'
         ? `<button class="btn primary sm" data-action="st-new">+ 새 전략</button>`
         : `<button class="btn primary sm" data-action="ls-new">+ 새 필기</button>`}
+        <button class="btn sm" data-action="bundle-open">📦 묶음 가져오기</button>
         <button class="btn sm" data-action="handoff">🧭 새 대화로 이어가기</button>
         ${!S.lessons.some(x => x.example) && !S.strategies.some(x => x.example) ? '<button class="btn sm" data-action="study-example">예시 넣기</button>' : '<button class="btn sm" data-action="study-example-del">예시 지우기</button>'}
       </div></div>`;
@@ -3325,6 +3326,54 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
 - 첫 줄: #meta,app=tradedesk-backtest,version=1,source=tester,strategy=<영문 전략 키>,symbol=<종목>,tf=<M5 등>,sl=<pt>,tp=<pt>,point=<1pt 가격>,lots=<랏>,from=<시작 YYYY-MM-DDTHH:MM 한국 시간>,to=<끝>,currency=<통화>
 - 둘째 줄 헤더: no,dir,entry_time,entry_price,exit_time,exit_price,lots,points,profit,reason,cross_time,signal_time,trend_close,trend_prev,trend_cur
 - dir는 BUY/SELL, 시간은 한국 시간 YYYY-MM-DDTHH:MM, points=(청산가-진입가)×방향÷1pt 가격, profit=손익+수수료+스왑, reason은 SL/TP/END (뒤의 5개 열은 비워도 됨)`;
+  }
+
+  /* ---------- 묶음 가져오기: 전략 카드·조건·필기 연결을 한 번에 ---------- */
+  const normName = x => String(x || '').replace(/[①-⑳★📖()\[\]\s·.,\-]/g, '').toLowerCase();
+  function findStByName(name) {
+    const k = normName(name); if (!k) return null;
+    return S.strategies.find(x => normName(x.name) === k) || S.strategies.find(x => { const n = normName(x.name); return n && (n.includes(k) || k.includes(n)); }) || null;
+  }
+  function importBundle(text) {
+    const a = text.indexOf('{'), b = text.lastIndexOf('}');
+    const d = JSON.parse(text.slice(a, b + 1));
+    if (!d || d.app !== 'tradedesk-bundle' || !Array.isArray(d.strategies)) throw new Error('묶음 형식이 아닙니다');
+    let made = 0, upd = 0, conds = 0, links = 0;
+    for (const c of d.strategies) {
+      let st = findStByName(c.name);
+      if (!st) { st = newStrategy({ name: uniqueName(c.name) }); S.strategies.push(st); ensureSetup(st.name); made++; } else upd++;
+      for (const k of ['summary', 'symbols', 'exit', 'avoid', 'source', 'tags']) if (c[k] != null) st[k] = c[k];
+      if (Array.isArray(c.entry)) st.entry = c.entry;
+      if (c.btCfg) { st.btCfg = cbNorm(clone(c.btCfg)); conds++; }
+    }
+    const missL = [];
+    for (const L of (d.lessonLinks || [])) {
+      const k = normName(L.lesson);
+      const ls = S.lessons.find(x => { const n = normName(x.title); return n && (n.includes(k) || k.includes(n)); });
+      if (!ls) { missL.push(L.lesson); continue; }
+      for (const nm of L.strategies || []) { const st = findStByName(nm); if (st && !ls.strategyIds.includes(st.id)) { ls.strategyIds.push(st.id); links++; } }
+    }
+    if (Array.isArray(d.checklist) && d.checklist.length) S.settings.checklist = d.checklist;
+    save();
+    if (cb.stId) { const st = findSt(cb.stId); if (st && st.btCfg) cb.cfg = cbNorm(clone(st.btCfg)); }
+    return { made, upd, conds, links, missL };
+  }
+  function openBundle() {
+    dialog('묶음 가져오기', `<p>Claude가 준 <b>묶음 코드</b>({"app":"tradedesk-bundle" …)를 통째로 붙여넣거나 파일을 고르세요. 같은 이름의 전략 카드는 <b>내용과 백테스트 조건을 새것으로 업데이트</b>하고, 없으면 새로 만들어요. 강의 필기 연결도 함께 해요. 그 밖의 카드·필기·매매 기록은 그대로 둡니다.</p>
+      <button class="btn block" type="button" id="bdPick" style="margin-top:10px">📁 묶음 파일 선택</button>
+      <input type="file" id="bdFile" accept=".txt,.json,text/plain,application/json" hidden>
+      <textarea id="bdText" placeholder='{"app":"tradedesk-bundle", ... }' style="min-height:160px"></textarea>`, [
+      { label: '취소', value: null },
+      { label: '가져오기', cls: 'primary', onClick: () => {
+        try {
+          const r = importBundle($('#bdText').value);
+          closeDialog(); renderStudy();
+          toast(`전략 카드 새로 ${r.made}개 · 업데이트 ${r.upd}개 · 백테스트 조건 ${r.conds}개 · 필기 연결 ${r.links}개` + (r.missL.length ? ` · 필기를 못 찾음: ${r.missL.join(', ')}` : ''), 6000);
+        } catch (e) { toast('⚠ 가져오기 실패: ' + e.message, 4000); }
+      } },
+    ]);
+    $('#bdPick').onclick = () => $('#bdFile').click();
+    $('#bdFile').onchange = async e => { const f = e.target.files[0]; if (f) { $('#bdText').value = await f.text(); toast('파일을 불러왔어요. 가져오기를 누르세요'); } };
   }
 
   function renameStrategy(st, name) {
@@ -3624,6 +3673,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       case 'import-open': openImport(); break;
       case 'cash-new': openCashForm(null); break;
       case 'handoff': openHandoff(); break;
+      case 'bundle-open': openBundle(); break;
       case 'study-mode': study.mode = el.dataset.v; study.open = null; renderStudy(); break;
       case 'study-back': study.open = null; study.draft = []; renderStudy(); window.scrollTo(0, 0); break;
       case 'study-example': addExamples(); renderStudy(); toast('예시를 넣었습니다. 전략 노트와 강의 필기를 둘러보세요'); break;

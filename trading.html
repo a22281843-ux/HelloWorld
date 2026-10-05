@@ -210,6 +210,11 @@
     .st-card .st-sum { font-size: .84rem; color: var(--sub); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .st-card .st-foot { font-size: .76rem; color: var(--muted); font-family: var(--mono); }
     .badge.ex { color: #fbbf24; background: rgba(251,191,36,.12); }
+    .st-card.sel { border-color: var(--accent); background: var(--accent-bg); }
+    .st-chk { flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border-2); background: transparent; color: #fff; font-size: 14px; font-weight: 900; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+    .st-chk.on { background: var(--accent); border-color: var(--accent); }
+    .sel-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); font-size: .84rem; }
+    .sel-bar .grow { flex: 1; font-weight: 700; }
     .course-head { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 2px 8px; font-weight: 800; }
     .course-head:first-child { margin-top: 0; }
     .lesson-no { font-family: var(--mono); font-size: .72rem; font-weight: 800; color: var(--accent); background: var(--accent-bg); padding: 2px 8px; border-radius: 6px; }
@@ -667,7 +672,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.11.0';
+  const APP_VERSION = 'v1.12.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -3214,7 +3219,7 @@
      노트: 전략 노트 · 강의 필기 (회차별)
      ========================================================= */
   const PRIVATE_SEED = null;  // 개인용 빌드에서만 채워짐 (내 전략 카드)
-  const study = { mode: 'strategy', open: null, draft: [] };
+  const study = { mode: 'strategy', open: null, draft: [], sel: new Set() };
   const GAL = {};   // 화면에 열린 이미지 묶음: key → { owner, imgs }
   const lines = t => String(t || '').split('\n').map(x => x.replace(/^\s*([-*•·]|\d+[.)])\s*/, '').trim()).filter(Boolean);
   const findSt = id => S.strategies.find(x => x.id === id);
@@ -3301,16 +3306,33 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
         <button class="btn sm" data-action="handoff">🧭 새 대화로 이어가기</button>
         ${!S.lessons.some(x => x.example) && !S.strategies.some(x => x.example) ? '<button class="btn sm" data-action="study-example">예시 넣기</button>' : '<button class="btn sm" data-action="study-example-del">예시 지우기</button>'}
       </div></div>`;
-    $('#studyRoot').innerHTML = head + (study.mode === 'strategy' ? strategyListHTML() : lessonListHTML());
+    $('#studyRoot').innerHTML = head + studySelBarHTML() + (study.mode === 'strategy' ? strategyListHTML() : lessonListHTML());
   }
+  /* ---------- 노트 목록: 체크해서 한꺼번에 삭제 ---------- */
+  const studyItems = () => study.mode === 'strategy' ? S.strategies : S.lessons;
+  function studySelBarHTML() {
+    const items = studyItems(); if (!items.length) return '';
+    for (const id of [...study.sel]) if (!items.some(x => x.id === id)) study.sel.delete(id);
+    const n = study.sel.size, all = n === items.length;
+    return `<div class="sel-bar"><span class="grow">${n ? `<span style="white-space:nowrap">${n}개 선택됨</span>` : '<span class="muted" style="font-weight:600">카드 왼쪽 네모를 눌러 여러 개 고를 수 있어요</span>'}</span>
+      <button class="btn sm" data-action="study-sel-all">${all ? '전체 해제' : '전체 선택'}</button>
+      ${n ? `<button class="btn sm" data-action="study-sel-clear">선택 해제</button><button class="btn sm danger" data-action="study-sel-del">🗑 선택한 ${n}개 삭제</button>` : ''}</div>`;
+  }
+  const selChk = id => `<button type="button" class="st-chk ${study.sel.has(id) ? 'on' : ''}" data-action="study-sel" data-id="${id}" aria-pressed="${study.sel.has(id)}" aria-label="선택">${study.sel.has(id) ? '✓' : ''}</button>`;
+  function deleteStrategy(st) {
+    setImgs('st-' + st.id, []); st.reviews.forEach(rv => setImgs('rv-' + rv.id, []));
+    S.strategies = S.strategies.filter(x => x !== st);
+    S.lessons.forEach(l => { l.strategyIds = l.strategyIds.filter(id => id !== st.id); });
+  }
+  function deleteLesson(l) { setImgs('ls-' + l.id, []); S.lessons = S.lessons.filter(x => x !== l); }
 
   function strategyListHTML() {
     if (!S.strategies.length) return `<div class="card empty">아직 전략 노트가 없습니다.<br><br>강의에서 배운 매매법을 <b>전략 카드</b> 한 장으로 정리하세요.<br>요약 · 진입 규칙 · 손절/금지 조건 · 차트 이미지 · 연결된 백테스트 · 실전 성과 · 복기 노트가 한곳에 모입니다.<br><br><b>예시 넣기</b>를 누르면 어떻게 생겼는지 볼 수 있어요.</div>`;
     return `<div class="st-grid">${S.strategies.map(st => {
       const r = strategyReal(st), runs = st.btIds.filter(id => S.bt.some(b => b.id === id)).length;
       const lessonsN = S.lessons.filter(l => l.strategyIds.includes(st.id)).length;
-      return `<div class="st-card" data-action="st-open" data-id="${st.id}">
-        <div class="st-title">${esc(st.name || '(이름 없음)')}${st.example ? '<span class="badge ex">예시</span>' : ''}</div>
+      return `<div class="st-card${study.sel.has(st.id) ? ' sel' : ''}" data-action="st-open" data-id="${st.id}">
+        <div class="st-title">${selChk(st.id)}${esc(st.name || '(이름 없음)')}${st.example ? '<span class="badge ex">예시</span>' : ''}</div>
         <div class="st-sub">${esc([st.source, st.symbols, st.tfs].filter(Boolean).join(' · ') || '출처·종목 미입력')}</div>
         ${st.summary ? `<div class="st-sum">${esc(st.summary)}</div>` : ''}
         <div class="st-foot">진입 규칙 ${st.entry.length} · 강의 ${lessonsN} · 백테스트 ${runs} · 실전 ${r.n}건${r.n ? ` (승률 ${pct(r.winRate, 0)}, ${rTxt(r.expR)})` : ''}${st.imgCount ? ' · 📷' + st.imgCount : ''}</div>
@@ -3324,8 +3346,8 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
     const arr = [...S.lessons].sort((a, b) => a.no - b.no);
     return `<div class="course-head"><span>전체 ${arr.length}회차</span><span class="sub" style="font-size:.78rem;font-weight:600">회차 순서는 필기 안 '회차' 숫자로 바꿀 수 있어요</span></div>
       <div class="st-grid">${arr.map(l => `
-        <div class="st-card" data-action="ls-open" data-id="${l.id}">
-          <div class="st-title"><span class="lesson-no">${esc(l.no)}회차</span>${esc(l.title || '(제목 없음)')}${l.example ? '<span class="badge ex">예시</span>' : ''}</div>
+        <div class="st-card${study.sel.has(l.id) ? ' sel' : ''}" data-action="ls-open" data-id="${l.id}">
+          <div class="st-title">${selChk(l.id)}<span class="lesson-no">${esc(l.no)}회차</span>${esc(l.title || '(제목 없음)')}${l.example ? '<span class="badge ex">예시</span>' : ''}</div>
           <div class="st-sub">${esc([l.date, l.course].filter(Boolean).join(' · '))}${l.strategyIds.length ? ' · 전략: ' + l.strategyIds.map(id => findSt(id)).filter(Boolean).map(x => esc(x.name)).join(', ') : ''}</div>
           ${l.summary ? `<div class="st-sum">${esc(l.summary)}</div>` : ''}
           <div class="st-foot">핵심 포인트 ${l.points.length}${l.questions ? ' · 질문 있음' : ''}${l.imgCount ? ' · 📷' + l.imgCount : ''}</div>
@@ -3872,7 +3894,20 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
           delete st.prevBundle; save(); renderStrategy(); toast('되돌렸습니다');
         }); break;
       }
-      case 'study-mode': study.mode = el.dataset.v; study.open = null; renderStudy(); break;
+      case 'study-mode': study.mode = el.dataset.v; study.open = null; study.sel.clear(); renderStudy(); break;
+      case 'study-sel': { const id = el.dataset.id; study.sel.has(id) ? study.sel.delete(id) : study.sel.add(id); renderStudy(); break; }
+      case 'study-sel-all': { const items = studyItems(); if (study.sel.size === items.length) study.sel.clear(); else items.forEach(x => study.sel.add(x.id)); renderStudy(); break; }
+      case 'study-sel-clear': study.sel.clear(); renderStudy(); break;
+      case 'study-sel-del': {
+        const isSt = study.mode === 'strategy', items = studyItems().filter(x => study.sel.has(x.id)); if (!items.length) break;
+        const names = items.slice(0, 5).map(x => isSt ? `"${x.name || '(이름 없음)'}"` : `${x.no}회차 ${x.title || ''}`.trim()).join(', ') + (items.length > 5 ? ` 외 ${items.length - 5}개` : '');
+        dialog('한꺼번에 삭제', `<p><b>${isSt ? '전략 노트' : '강의 필기'} ${items.length}개</b>를 삭제할까요? 삭제하면 되돌릴 수 없어요.</p><p class="muted">${esc(names)}</p>${isSt ? '<p class="muted">일지의 매매 기록과 셋업 이름은 남습니다.</p>' : ''}`,
+          [{ label: '취소', value: false }, { label: `${items.length}개 삭제`, value: true, cls: 'danger' }]).then(ok => {
+          if (ok !== true) return;
+          items.forEach(x => isSt ? deleteStrategy(x) : deleteLesson(x));
+          study.sel.clear(); save(); renderStudy(); toast(`${items.length}개를 삭제했습니다`);
+        }); break;
+      }
       case 'study-back': study.open = null; study.draft = []; renderStudy(); window.scrollTo(0, 0); break;
       case 'study-example': addExamples(); renderStudy(); toast('예시를 넣었습니다. 전략 노트와 강의 필기를 둘러보세요'); break;
       case 'study-example-del':
@@ -3907,9 +3942,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         const st = findSt(study.open); if (!st) break;
         ask(`"${st.name}" 전략 노트를 삭제할까요? (일지의 매매 기록과 셋업 이름은 남습니다)`, '삭제', true).then(ok => {
           if (!ok) return;
-          setImgs('st-' + st.id, []); st.reviews.forEach(rv => setImgs('rv-' + rv.id, []));
-          S.strategies = S.strategies.filter(x => x !== st);
-          S.lessons.forEach(l => { l.strategyIds = l.strategyIds.filter(id => id !== st.id); });
+          deleteStrategy(st); study.sel.delete(st.id);
           study.open = null; save(); renderStudy();
         }); break;
       }
@@ -3917,7 +3950,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         const l = findLs(study.open); if (!l) break;
         ask(`${l.no}회차 필기를 삭제할까요?`, '삭제', true).then(ok => {
           if (!ok) return;
-          setImgs('ls-' + l.id, []); S.lessons = S.lessons.filter(x => x !== l); study.open = null; save(); renderStudy();
+          deleteLesson(l); study.sel.delete(l.id); study.open = null; save(); renderStudy();
         }); break;
       }
       case 'ls-to-st': {

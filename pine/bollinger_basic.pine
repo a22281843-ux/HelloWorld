@@ -1,0 +1,96 @@
+//@version=6
+indicator("기본", overlay=true)
+
+// === 1. 기본 밴드 설정 ===
+length1 = input.int(4, title="볼린저 밴드 1 길이", minval=1)
+mult1 = input.float(4.0, title="볼린저 밴드 1 표준편차 배수", minval=0.1)
+src1 = input.source(open, title="볼린저 밴드 1 계산 기준 값")
+
+// === 2. 추가 밴드 설정 ===
+length2 = input.int(20, title="볼린저 밴드 2 길이", minval=1)
+mult2 = input.float(2.0, title="볼린저 밴드 2 표준편차 배수", minval=0.1)
+src2 = input.source(open, title="볼린저 밴드 2 계산 기준 값")
+
+squeeze_ratio = input.float(0.8, title="수축 비율", minval=0.01, maxval=0.99)
+
+// === 3. 밴드 계산 ===
+// 밴드 1
+ma1 = ta.sma(src1, length1)
+stdev1 = ta.stdev(src1, length1)
+upper_band1 = ma1 + stdev1 * mult1
+lower_band1 = ma1 - stdev1 * mult1
+
+// 밴드 2
+ma2 = ta.sma(src2, length2)
+stdev2 = ta.stdev(src2, length2)
+upper_band2 = ma2 + stdev2 * mult2
+lower_band2 = ma2 - stdev2 * mult2
+
+bandwidth = upper_band1 - lower_band1
+prev_bandwidth = bandwidth[1]
+
+sma20 = ta.sma(close, 20)
+sma120 = ta.sma(close, 120)
+
+// === 4. 터치 조건 ===
+is_touch_upper = high >= upper_band1 and high[1] < upper_band1[1]
+is_touch_lower = low <= lower_band1 and low[1] > lower_band1[1]
+
+is_squeezed = bandwidth < prev_bandwidth * squeeze_ratio
+
+gold_cross = ta.crossover(sma20, sma120)
+dead_cross = ta.crossunder(sma20, sma120)
+
+var bool wait_gc = false
+var bool wait_dc = false
+
+if gold_cross
+    wait_gc := true
+    wait_dc := false
+
+if dead_cross
+    wait_dc := true
+    wait_gc := false
+
+is_sma20_up = sma20 > sma20[1]
+is_sma20_down = sma20 < sma20[1]
+
+alert_sq_upper = is_squeezed and is_touch_upper
+alert_sq_lower = is_squeezed and is_touch_lower
+alert_gc_first = wait_gc and is_touch_lower
+alert_dc_first = wait_dc and is_touch_upper
+alert_simple_upper = is_touch_upper
+alert_simple_lower = is_touch_lower
+alert_double_buy = is_sma20_up and is_touch_lower
+alert_double_sell = is_sma20_down and is_touch_upper
+
+if alert_gc_first
+    wait_gc := false
+
+if alert_dc_first
+    wait_dc := false
+
+// === 5. 시각화 ===
+plot(sma20, title="20 SMA")
+plot(sma120, title="120 SMA", linewidth=2)
+
+plot(upper_band1, title="상단 밴드 1")
+plot(lower_band1, title="하단 밴드 1")
+
+plot(upper_band2, title="상단 밴드 2", linewidth=1)
+plot(lower_band2, title="하단 밴드 2", linewidth=1)
+
+plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, title="수축 상단")
+plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, title="수축 하단")
+plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, title="골크 첫터치")
+plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, title="데크 첫터치")
+
+// === 6. 알림 ===
+alertcondition(alert_sq_upper, "1. 수축후 상단터치", "수축원비 매도!")
+alertcondition(alert_sq_lower, "2. 수축후 하단터치", "수축원비 매수!")
+alertcondition(alert_gc_first, "3. 골크후 첫 하단터치", "골든크로스 이후 첫 번째 원비!")
+alertcondition(alert_dc_first, "4. 데크후 첫 상단터치", "데드크로스 이후 첫 번째 원비!")
+alertcondition(alert_simple_upper, "5. 상단원비 터치", "상단원비!")
+alertcondition(alert_simple_lower, "6. 하단원비 터치", "하단원비!")
+alertcondition(alert_double_buy, "7. 기본더블비 매수", "기본더블비 매수!")
+alertcondition(alert_double_sell, "8. 기본더블비 매도", "기본더블비 매도!")

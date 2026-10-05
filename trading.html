@@ -2240,27 +2240,43 @@
     time: { name: '시간대 (한국 시간)', params: [{ k: 'from', label: '시작 시', def: 16 }, { k: 'to', label: '끝 시', def: 2 }],
       text: p => `한국 시간 ${p.from}시 ~ ${p.to}시 사이 신호만` },
   };
+  // 더캔이지추격깨: 조건마다 근거 카테고리를 붙이고, 겹친 카테고리 수로 진입 여부를 판단
+  const CB_CATS = ['더', '캔', '이', '지', '추', '격', '깨'];
+  const CB_CAT_NAME = { 더: '더블비', 캔: '캔들', 이: '이평선', 지: '지지·저항', 추: '추세선·패턴', 격: '이격도·RSI', 깨: '깨짐(돌파)' };
+  const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', candle: '캔', nowick: '캔', longwick: '캔', strong: '캔', hold: '지',
+    ma: '이', stack: '이', matouch: '이', maside: '이', nbrk: '깨', daybrk: '깨', dbl: '추', move: '추', div: '격', rsi3: '격', time: '' };
+  const catBit = c => { const k = CB_CATS.indexOf(c.cat); return k < 0 ? 0 : 1 << k; };
+  const catCount = m => { let n = 0; for (; m; m &= m - 1) n++; return n; };
+  const catTxt = m => CB_CATS.filter((_, k) => m & (1 << k)).join('·');
   const REASON_ALL = { ...REASON_KO, IND: '지표 청산', TIME: '보유 봉 초과', DAY: '당일 청산' };
 
   function cbDefaultCfg() {
     return { dir: 'both', tf: 'H1',
       ind: { b1: { n: 20, k: 2, src: 'close' }, b2: { n: 4, k: 4, src: 'open' }, ma: { n: 20, src: 'close' } },
-      conds: [], minScore: 2,
+      conds: [], minScore: 3, scoreV: 2,
       exit: { sl: 'fixed', slPts: 50, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0 } };
   }
-  function cbNorm(c) {
-    const d = cbDefaultCfg(); c = c && typeof c === 'object' ? c : {};
+  function cbNorm(c) { c = c && typeof c === 'object' ? c : {}; return cbNormScore(cbNormBase(c), c); }
+  function cbNormBase(c) {
+    const d = cbDefaultCfg();
     const ind = c.ind || {};
     return { dir: ['buy', 'sell', 'both'].includes(c.dir) ? c.dir : d.dir, tf: CB_TFS.some(x => x[0] === c.tf) ? c.tf : d.tf,
       ind: { b1: { ...d.ind.b1, ...(ind.b1 || {}) }, b2: { ...d.ind.b2, ...(ind.b2 || {}) }, ma: { ...d.ind.ma, ...(ind.ma || {}) } },
       conds: (Array.isArray(c.conds) ? c.conds : []).filter(x => x && CB_CONDS[x.type]).map(x => cbNewCond(x.type, x)),
-      minScore: Math.max(1, Math.round(num(c.minScore) ?? d.minScore)),
       exit: { ...d.exit, ...(c.exit || {}) } };
+  }
+  // 예전 코드의 minScore(점수 조건 개수) → 근거 카테고리 총개수(필수 포함)로 바꿔 읽음
+  function cbNormScore(cfg, raw) {
+    let m = num(raw.minScore);
+    if (raw.scoreV !== 2 && m != null && cfg.conds.some(c => c.role === 'score'))
+      m += catCount(cfg.conds.filter(c => c.role === 'req').reduce((a, c) => a | catBit(c), 0));
+    cfg.minScore = Math.max(1, Math.round(m ?? 3)); cfg.scoreV = 2;
+    return cfg;
   }
   function cbNewCond(type, o = {}) {
     const p = { w: 0 };
     for (const q of CB_CONDS[type].params) p[q.k] = q.def;
-    return { id: o.id || uid(), type, role: ROLE_KO[o.role] ? o.role : 'req', p: { ...p, ...(o.p || {}) } };
+    return { id: o.id || uid(), type, role: ROLE_KO[o.role] ? o.role : 'req', cat: o.cat != null && (o.cat === '' || CB_CATS.includes(o.cat)) ? o.cat : (CB_CAT_DEF[type] ?? ''), p: { ...p, ...(o.p || {}) } };
   }
   const cb = (() => {
     let d = {}; try { d = JSON.parse(localStorage.getItem(CB_KEY)) || {}; } catch (e) {}
@@ -2596,7 +2612,8 @@
         }
       }
       if (m >= M) { m = M - 1; exitP = D.c[m]; reason = 'END'; }
-      trades.push({ dir: s, entryTime: isoOf(kstOf(D.t[m0], X.meta)), exitTime: isoOf(kstOf(D.t[m], X.meta)), entry: E, exit: exitP,
+      const sig = s > 0 ? sigB : sigS;
+      trades.push({ cats: sig && sig.cats ? sig.cats[i] : 0, dir: s, entryTime: isoOf(kstOf(D.t[m0], X.meta)), exitTime: isoOf(kstOf(D.t[m], X.meta)), entry: E, exit: exitP,
         points: Math.round((exitP - E) * s / pt * 100) / 100, risk: Math.round(risk / pt * 100) / 100, reason, crossTime: isoOf(kstOf(B.t[i], X.meta)) });
       i = Math.max(i, k - 1);   // 청산한 봉의 마감부터 다음 신호
       if (k >= N - 1) break;
@@ -2608,8 +2625,9 @@
     const cfg = cb.cfg, D = await cbGetData(cb.data);
     if (!D) { toast('먼저 1분봉 CSV를 불러오세요', 3000); return; }
     const req = cfg.conds.filter(c => c.role === 'req' || c.role === 'not'), opt = cfg.conds.filter(c => c.role === 'opt'), score = cfg.conds.filter(c => c.role === 'score');
-    const minScore = Math.max(1, Math.round(num(cfg.minScore) ?? 2));
-    if (score.length && score.length < minScore) { toast(`점수 조건이 ${score.length}개뿐이라 ${minScore}개 이상을 채울 수 없어요`, 3500); return; }
+    const minScore = Math.max(1, Math.round(num(cfg.minScore) ?? 3));
+    const allCats = catCount([...req.filter(c => c.role !== 'not'), ...opt, ...score].reduce((a, c) => a | catBit(c), 0));
+    if (score.length && allCats < minScore) { toast(`조건들의 근거 카테고리가 ${allCats}개뿐이라 ${minScore}개 이상을 채울 수 없어요. 조건의 '근거'를 확인하세요`, 4500); return; }
     if (!req.length && !opt.length && !cfg.conds.some(c => c.role === 'score')) { toast('조건을 하나 이상 추가하세요'); return; }
     if (opt.length > CB_MAX_OPT) { toast(`비교 조건은 ${CB_MAX_OPT}개까지 가능합니다 (${2 ** CB_MAX_OPT}개 조합)`, 3500); return; }
     if (cfg.exit.sl === 'fixed' && !(num(cfg.exit.slPts) > 0)) { toast('손절 pt를 입력하세요'); return; }
@@ -2621,15 +2639,20 @@
       const sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
       const arr = new Map();
       for (const c of [...req, ...opt, ...score]) arr.set(c.id, { 1: sides.includes(1) ? condArray(X, c, 1) : null, '-1': sides.includes(-1) ? condArray(X, c, -1) : null });
+      // 점수 조건이 맞은 근거 카테고리(봉마다 비트)
+      const scoreBits = {};
+      for (const s of sides) {
+        const b = new Uint8Array(X.N);
+        for (const c of score) { const a = arr.get(c.id)[s], bit = catBit(c); if (bit) for (let i = 0; i < X.N; i++) if (a[i]) b[i] |= bit; }
+        scoreBits[s] = b;
+      }
       const and = (set, s) => {
         if (!sides.includes(s)) return null;
-        const out = new Uint8Array(X.N).fill(1);
-        for (const c of set) { const a = arr.get(c.id)[s], neg = c.role === 'not'; for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
-        if (score.length) {
-          const cnt = new Uint8Array(X.N);
-          for (const c of score) { const a = arr.get(c.id)[s]; for (let i = 0; i < X.N; i++) cnt[i] += a[i]; }
-          for (let i = 0; i < X.N; i++) if (cnt[i] < minScore) out[i] = 0;
-        }
+        const out = new Uint8Array(X.N).fill(1), cats = new Uint8Array(X.N);
+        let base = 0;
+        for (const c of set) { const a = arr.get(c.id)[s], neg = c.role === 'not'; if (!neg) base |= catBit(c); for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
+        for (let i = 0; i < X.N; i++) { cats[i] = base | scoreBits[s][i]; if (score.length && catCount(cats[i]) < minScore) out[i] = 0; }
+        out.cats = cats;
         return out;
       };
       const d0 = kstOf(D.t[0], meta), d1 = kstOf(D.t[D.t.length - 1], meta);
@@ -2664,7 +2687,7 @@
   function cbSummary(cfg) {
     const dirKo = { buy: '매수만', sell: '매도만', both: '매수·매도' }[cfg.dir];
     const on = cfg.conds.filter(c => c.role !== 'off');
-    return `${dirKo} · ${cfg.tf}` + (on.length ? '\n' + on.map(c => `- [${ROLE_KO[c.role]}] ${CB_CONDS[c.type].name}: ${cbCondText(c)}`).join('\n') : '\n(조건 없음)');
+    return `${dirKo} · ${cfg.tf}` + (on.length ? '\n' + on.map(c => `- [${ROLE_KO[c.role]}]${c.cat ? `(${c.cat})` : ''} ${CB_CONDS[c.type].name}: ${cbCondText(c)}`).join('\n') + (on.some(c => c.role === 'score') ? `\n- 근거 최소 ${cfg.minScore}개` : '') : '\n(조건 없음)');
   }
 
   function renderCB() {
@@ -2676,8 +2699,8 @@
       const def = CB_CONDS[c.type], lt = c.role === 'opt' ? String.fromCharCode(65 + optIdx++) : '';
       return `<div class="cb-cond ${c.role}">
         <select data-cb="role" data-i="${i}" aria-label="역할">${cbOpts(Object.entries(ROLE_KO), c.role)}</select>
-        <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
-          <div class="cb-params">${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
+        <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${c.cat ? `<span class="tag" style="margin-right:6px">${c.cat}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
+          <div class="cb-params"><label>근거${`<select data-cb="cat" data-i="${i}">${cbOpts([...CB_CATS.map(k => [k, `${k} · ${CB_CAT_NAME[k]}`]), ['', '없음 (세지 않음)']], c.cat)}</select>`}</label>${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
             <label>언제까지 인정${`<select data-cb="p" data-k="w" data-i="${i}">${cbOpts([[0, '이번 봉에서만'], [1, '1봉 전까지'], [2, '2봉 전까지'], [3, '3봉 전까지'], [5, '5봉 전까지']], Math.round(num(c.p.w) || 0))}</select>`}</label></div></div>
         <button class="btn sm danger" data-action="cb-del" data-i="${i}" aria-label="조건 삭제">×</button>
       </div>`;
@@ -2736,9 +2759,9 @@
           <div class="field"><label>이평 기준 가격</label><select data-cb="ind" data-b="ma" data-k="src">${cbOpts(SRC_OPTS, cfg.ind.ma.src)}</select></div>
         </div></details>
 
-      <div class="cb-sec"><span>④ 조건 <span class="hint" style="font-weight:600">필수 = 항상 적용 · 점수 = 이 중 최소 N개 충족 · 비교 = 넣고/빼는 조합을 모두 테스트 · 제외 = 이 조건이 맞으면 진입 안 함 (${optN}/${CB_MAX_OPT}개 → ${optN ? 2 ** optN : 1}가지)</span></span>
+      <div class="cb-sec"><span>④ 조건 <span class="hint" style="font-weight:600">필수 = 항상 적용 · 점수 = 맞으면 근거로 셈 · 비교 = 넣고/빼는 조합을 모두 테스트 · 제외 = 이 조건이 맞으면 진입 안 함 (${optN}/${CB_MAX_OPT}개 → ${optN ? 2 ** optN : 1}가지)</span></span>
         <select id="cbAdd" style="width:auto"><option value="">+ 조건 추가</option>${Object.entries(CB_CONDS).map(([k, d]) => `<option value="${k}">${esc(d.name)}</option>`).join('')}</select></div>
-      ${cfg.conds.some(c => c.role === 'score') ? `<div class="btn-row" style="align-items:center;margin-bottom:8px;font-size:.84rem"><span>점수 조건 ${cfg.conds.filter(c => c.role === 'score').length}개 중 최소</span><input type="number" class="num-in" data-cb="cfg" data-k="minScore" value="${esc(cfg.minScore)}" style="width:70px;padding:6px 8px;font-size:14px"><span>개 이상 맞으면 진입</span></div>` : ''}
+      ${cfg.conds.some(c => c.role === 'score') ? `<div class="btn-row" style="align-items:center;margin-bottom:8px;font-size:.84rem"><span>근거(더캔이지추격깨) 최소</span><input type="number" class="num-in" data-cb="cfg" data-k="minScore" value="${esc(cfg.minScore)}" style="width:70px;padding:6px 8px;font-size:14px"><span>개 이상 겹치면 진입</span><span class="muted" style="font-size:.74rem">필수 조건 근거 ${catTxt(cfg.conds.filter(c => c.role === 'req').reduce((a, c) => a | catBit(c), 0)) || '없음'} + 점수 조건에서 맞은 근거를 합쳐 셉니다 (같은 근거는 1개)</span></div>` : ''}
       ${condRows || '<div class="empty" style="padding:16px">아직 조건이 없습니다. <b>+ 조건 추가</b>에서 고르거나, 전략 카드를 선택하거나, 조건을 붙여넣으세요.</div>'}
 
       <div class="cb-sec">⑤ 청산</div>
@@ -2786,7 +2809,7 @@
     if (!R) return;
     const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
     $('#cbResHint').textContent = `${R.name} ${R.cfg.tf} · ${R.from.slice(0, 10)} ~ ${R.to.slice(0, 10)} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`}`;
-    const baseTxt = (R.req.length ? '필수' : '') + ((R.score || []).length ? (R.req.length ? '·' : '') + `점수 ${R.minScore}개+` : ''), label = r => r.mask === 0 ? (baseTxt ? baseTxt + '만' : '—') : (baseTxt ? baseTxt + ' + ' : '') + r.letters.split('').join(' + ');
+    const baseTxt = (R.req.length ? '필수' : '') + ((R.score || []).length ? (R.req.length ? '·' : '') + `근거 ${R.minScore}개+` : ''), label = r => r.mask === 0 ? (baseTxt ? baseTxt + '만' : '—') : (baseTxt ? baseTxt + ' + ' : '') + r.letters.split('').join(' + ');
     const pick = R.res[cb.pick] || R.res[0];
     $('#cbRes').innerHTML = `
       ${R.opt.length ? `<div class="sub" style="font-size:.78rem;margin-bottom:8px">${R.opt.map((c, b) => `<b>${String.fromCharCode(65 + b)}</b> ${esc(CB_CONDS[c.type].name)}`).join(' · ')}</div>` : ''}
@@ -2814,22 +2837,36 @@
         <div class="kpi"><div class="k">최대 낙폭</div><div class="v down">${pick.st.money.mdd ? '-' + money(pick.st.money.mdd, false) : '$0.00'}</div><div class="s">${pick.st.money.mddPct == null ? '' : '고점 대비 ' + pct(pick.st.money.mddPct, 1)}</div></div>
         <div class="kpi"><div class="k">거래당 평균</div><div class="v ${cls(pick.st.money.total)}">${money(pick.st.money.total / pick.trades.length)}</div><div class="s">${pick.trades.length}건</div></div>
       </div>` : ''}
-      ${cbTradesHTML(pick.trades)}`;
+      ${cbCatStatsHTML(pick.trades)}${cbTradesHTML(pick.trades)}`;
     const base = R.res.find(r => r.mask === 0);
     requestAnimationFrame(() => drawMulti($('#cbChart'), [
       ...(base && base !== pick && base.st.n ? [{ color: '#e2e8f0', vals: base.st.curveR, dash: true }] : []),
       ...(pick.st.n ? [{ color: BT_COLORS[0], vals: pick.st.curveR }] : [])]));
   }
 
+  // 겹친 근거 개수별 성과 (3개일 때 vs 4개 이상일 때)
+  function cbCatStatsHTML(trades) {
+    const g = {};
+    for (const t of trades) { const n = catCount(t.cats || 0); (g[n] = g[n] || []).push(t); }
+    const keys = Object.keys(g).map(Number).sort((a, b) => a - b);
+    if (keys.length < 1 || (keys.length === 1 && keys[0] === 0)) return '';
+    const rows = keys.map(n => { const st = seriesStats(g[n].map(t => t.points), g[n].map(t => t.points / t.risk), null);
+      const usd = g[n].reduce((a, t) => a + (t.profit || 0), 0);
+      return `<tr><td>${n ? `근거 ${n}개` : '근거 없음'}</td><td>${st.n}건</td><td>${pct(st.winRate, 1)}</td><td>${st.payoff == null ? '—' : '1:' + st.payoff.toFixed(2)}</td><td class="${cls(st.expR)}">${rTxt(st.expR)}</td><td class="${cls(usd)}">${money(usd)}</td></tr>`; }).join('');
+    const top = {}; for (const t of trades) top[catTxt(t.cats || 0)] = (top[catTxt(t.cats || 0)] || 0) + 1;
+    const common = Object.entries(top).filter(([k]) => k).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${v}건`).join(' · ');
+    return `<div class="tbl-scroll" style="margin-bottom:12px"><table class="bd cmp"><thead><tr><th style="text-align:left">겹친 근거 (더캔이지추격깨)</th><th>거래</th><th>승률</th><th>손익비</th><th>기대값</th><th>손익 $</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${common ? `<div class="sub" style="font-size:.74rem;margin:-6px 0 12px">자주 겹친 조합: ${esc(common)}</div>` : ''}`;
+  }
   function cbTradesHTML(trades) {
     if (!trades.length) return '<div class="empty" style="padding:16px">이 조합은 조건을 모두 만족한 봉이 없어 거래가 없습니다.</div>';
     const dg = Math.max(2, ...trades.slice(0, 20).map(t => priceDigits(t.entry)));
     const tm = s => (s || '').replace('T', ' ').slice(2);
-    return `<div class="tbl-scroll" style="max-height:440px;overflow-y:auto"><table class="bd"><thead><tr><th>#</th><th>신호봉</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>사유</th><th>랏</th><th>손익 pt</th><th>R</th><th>손익 $</th><th>잔고</th></tr></thead><tbody>${
+    return `<div class="tbl-scroll" style="max-height:440px;overflow-y:auto"><table class="bd"><thead><tr><th>#</th><th>신호봉</th><th>진입 (한국 시간)</th><th>청산</th><th>방향</th><th>진입가 → 청산가</th><th>근거</th><th>사유</th><th>랏</th><th>손익 pt</th><th>R</th><th>손익 $</th><th>잔고</th></tr></thead><tbody>${
       trades.map((t, i) => { const r = t.risk ? t.points / t.risk : null;
         return `<tr><td>${i + 1}</td><td>${tm(t.crossTime)}</td><td>${tm(t.entryTime)}</td><td>${tm(t.exitTime)}</td>
           <td><span class="badge ${t.dir === -1 ? 'S' : 'L'}">${t.dir === -1 ? '매도' : '매수'}</span></td>
-          <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td>${REASON_ALL[t.reason] || esc(t.reason)}</td>
+          <td>${fx(t.entry, dg)} → ${fx(t.exit, dg)}</td><td style="font-family:inherit">${t.cats ? `${catTxt(t.cats)} <small class="muted">(${catCount(t.cats)})</small>` : '—'}</td><td>${REASON_ALL[t.reason] || esc(t.reason)}</td>
           <td>${t.lots == null ? '—' : fx(t.lots, 2)}</td><td class="${cls(t.points)}">${t.points > 0 ? '+' : ''}${fx(t.points, 1)}</td><td class="${cls(r)}">${rTxt(r)}</td>
           <td class="${cls(t.profit)}">${money(t.profit)}</td><td>${money(t.bal, false)}</td></tr>`; }).join('')
     }</tbody></table></div>
@@ -2837,7 +2874,7 @@
   }
   function cbComboLabel(R, r) {
     const names = [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => (c.role === 'not' ? '제외:' : '') + CB_CONDS[c.type].name);
-    if ((R.score || []).length) names.push(`점수 ${R.minScore}개+(${R.score.map(c => CB_CONDS[c.type].name).join('·')})`);
+    if ((R.score || []).length) names.push(`근거 ${R.minScore}개+(${R.score.map(c => (c.cat ? c.cat + ':' : '') + CB_CONDS[c.type].name).join('·')})`);
     return names.join(' + ');
   }
   function cbKeep() {
@@ -2912,8 +2949,9 @@
     const val = t.tagName === 'SELECT' ? t.value : (num(t.value) ?? '');
     switch (t.dataset.cb) {
       case 'role': cfg.conds[i].role = t.value; break;
+      case 'cat': cfg.conds[i].cat = t.value; break;
       case 'p': cfg.conds[i].p[k] = val; break;
-      case 'cfg': cfg[k] = k === 'minScore' ? Math.max(1, Math.round(num(t.value) ?? 2)) : t.value; break;
+      case 'cfg': cfg[k] = k === 'minScore' ? Math.max(1, Math.round(num(t.value) ?? 3)) : t.value; break;
       case 'ind': cfg.ind[t.dataset.b][k] = val; break;
       case 'ex': cfg.exit[k] = k === 'dayEnd' ? t.value === '1' : val; break;
       case 'sym': { const m = cb.syms[cb.data]; if (!m) return; m[k] = k === 'dst' ? t.value === '1' : val; if (k === 'gmt' || k === 'dst') m.tz = 'manual'; break; }

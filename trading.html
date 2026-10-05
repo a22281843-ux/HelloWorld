@@ -3334,14 +3334,31 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
     const k = normName(name); if (!k) return null;
     return S.strategies.find(x => normName(x.name) === k) || S.strategies.find(x => { const n = normName(x.name); return n && (n.includes(k) || k.includes(n)); }) || null;
   }
-  function importBundle(text) {
+  function parseBundle(text) {
     const a = text.indexOf('{'), b = text.lastIndexOf('}');
     const d = JSON.parse(text.slice(a, b + 1));
     if (!d || d.app !== 'tradedesk-bundle' || !Array.isArray(d.strategies)) throw new Error('묶음 형식이 아닙니다');
+    return d;
+  }
+  // 묶음 카드 → 내 카드 짝짓기: 이름이 같으면 그 카드, 일부만 같으면 후보가 딱 하나일 때만 (애매하면 새 카드로)
+  function bundlePlan(d) {
+    const used = new Set();
+    return d.strategies.map(c => {
+      const k = normName(c.name);
+      let st = S.strategies.find(x => !used.has(x.id) && normName(x.name) === k);
+      if (!st) { const cand = S.strategies.filter(x => { const n = normName(x.name); return !used.has(x.id) && n && (n.includes(k) || k.includes(n)); }); if (cand.length === 1) st = cand[0]; }
+      if (st) used.add(st.id);
+      return { c, st };
+    });
+  }
+  function importBundle(text, skip = new Set()) {
+    const d = parseBundle(text);
     let made = 0, upd = 0, conds = 0, links = 0;
-    for (const c of d.strategies) {
-      let st = findStByName(c.name);
+    for (const { c, st: found } of bundlePlan(d)) {
+      if (skip.has(c.name)) continue;
+      let st = found;
       if (!st) { st = newStrategy({ name: uniqueName(c.name) }); S.strategies.push(st); ensureSetup(st.name); made++; } else upd++;
+      if (found) { st.prevBundle = { at: new Date().toISOString(), summary: st.summary, symbols: st.symbols, entry: st.entry, exit: st.exit, avoid: st.avoid, btCfg: st.btCfg }; }
       for (const k of ['summary', 'symbols', 'exit', 'avoid', 'source', 'tags']) if (c[k] != null) st[k] = c[k];
       if (Array.isArray(c.entry)) st.entry = c.entry;
       if (c.btCfg) { st.btCfg = cbNorm(clone(c.btCfg)); conds++; }
@@ -3364,12 +3381,21 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       <input type="file" id="bdFile" accept=".txt,.json,text/plain,application/json" hidden>
       <textarea id="bdText" placeholder='{"app":"tradedesk-bundle", ... }' style="min-height:160px"></textarea>`, [
       { label: '취소', value: null },
-      { label: '가져오기', cls: 'primary', onClick: () => {
-        try {
-          const r = importBundle($('#bdText').value);
-          closeDialog(); renderStudy();
-          toast(`전략 카드 새로 ${r.made}개 · 업데이트 ${r.upd}개 · 백테스트 조건 ${r.conds}개 · 필기 연결 ${r.links}개` + (r.missL.length ? ` · 필기를 못 찾음: ${r.missL.join(', ')}` : ''), 6000);
-        } catch (e) { toast('⚠ 가져오기 실패: ' + e.message, 4000); }
+      { label: '미리보기', cls: 'primary', onClick: () => {
+        const text = $('#bdText').value;
+        let plan; try { plan = bundlePlan(parseBundle(text)); } catch (e) { toast('⚠ 묶음을 읽지 못했어요: ' + e.message, 4000); return; }
+        dialog('가져올 내용 확인', `<p>체크한 카드만 바뀌어요. <b>업데이트</b>는 내 카드의 글과 백테스트 조건을 묶음 내용으로 덮어써요 (직전 내용은 카드에 백업돼서 되돌릴 수 있어요). 체크를 풀면 그 카드는 그대로 둡니다.</p>
+          ${plan.map((x, i) => `<label class="check"><input type="checkbox" data-bdi="${i}" checked><span>${x.st ? `<b>업데이트</b> · 내 카드 "${esc(x.st.name)}"${x.st.name !== x.c.name ? ` ← 묶음 "${esc(x.c.name)}"` : ''}` : `<b>새로 만들기</b> · "${esc(x.c.name)}"`}</span></label>`).join('')}`, [
+          { label: '취소', value: null },
+          { label: '적용', cls: 'primary', onClick: () => {
+            const skip = new Set(plan.filter((x, i) => !$(`#dlgBody [data-bdi="${i}"]`).checked).map(x => x.c.name));
+            try {
+              const r = importBundle(text, skip);
+              closeDialog(); renderStudy();
+              toast(`전략 카드 새로 ${r.made}개 · 업데이트 ${r.upd}개 · 백테스트 조건 ${r.conds}개 · 필기 연결 ${r.links}개` + (r.missL.length ? ` · 필기를 못 찾음: ${r.missL.join(', ')}` : ''), 6000);
+            } catch (e) { toast('⚠ 가져오기 실패: ' + e.message, 4000); }
+          } },
+        ]);
       } },
     ]);
     $('#bdPick').onclick = () => $('#bdFile').click();
@@ -3459,6 +3485,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
                 <div class="rv-text">${esc(rv.text)}</div>${rv.imgCount ? `<div class="imgs" data-rv-imgs="${rv.id}" style="margin-top:8px"></div>` : ''}</div>`).join('')
               : '<div class="sub" style="font-size:.8rem">아직 복기가 없습니다.</div>'}</div>
           </div>
+          ${st.prevBundle ? `<button class="btn" data-action="st-undo-bundle">↶ 묶음 가져오기 전으로 되돌리기 (${esc(st.prevBundle.at.slice(0, 10))})</button>` : ''}
           <button class="btn danger" data-action="st-del">이 전략 노트 삭제</button>
         </div>
       </div>`;
@@ -3674,6 +3701,14 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       case 'cash-new': openCashForm(null); break;
       case 'handoff': openHandoff(); break;
       case 'bundle-open': openBundle(); break;
+      case 'st-undo-bundle': {
+        const st = findSt(study.open); if (!st || !st.prevBundle) break;
+        ask('이 카드의 글과 백테스트 조건을 묶음 가져오기 전 상태로 되돌릴까요?', '되돌리기').then(ok => {
+          if (!ok) return;
+          const p = st.prevBundle; for (const k of ['summary', 'symbols', 'entry', 'exit', 'avoid', 'btCfg']) st[k] = p[k];
+          delete st.prevBundle; save(); renderStrategy(); toast('되돌렸습니다');
+        }); break;
+      }
       case 'study-mode': study.mode = el.dataset.v; study.open = null; renderStudy(); break;
       case 'study-back': study.open = null; study.draft = []; renderStudy(); window.scrollTo(0, 0); break;
       case 'study-example': addExamples(); renderStudy(); toast('예시를 넣었습니다. 전략 노트와 강의 필기를 둘러보세요'); break;

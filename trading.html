@@ -1052,7 +1052,7 @@
     return pts;
   }
   const DIMS = [
-    ['setup', '셋업'], ['symbol', '종목'], ['tf', '시간봉'], ['dir', '방향'], ['hour', '시간대'],
+    ['setup', '셋업'], ['symbol', '종목'], ['tf', '시간봉'], ['dir', '방향'], ['session', '장'], ['hour', '시간대'],
     ['weekday', '요일'], ['checklist', '체크리스트'], ['emotion', '감정'], ['mistake', '실수'],
     ['byDay', '일별'], ['byWeek', '주별'], ['byMonth', '월별'], ['byYear', '연별'],
   ];
@@ -1066,6 +1066,7 @@
       case 'tf': return [t.tf || '(미지정)'];
       case 'dir': return [t.dir === 'S' ? '숏' : '롱'];
       case 'hour': return [`${pad(d.getHours())}시`];
+      case 'session': return [sessOf(d.getHours())];
       case 'weekday': return [WEEKDAYS[d.getDay()]];
       case 'checklist': { const c = checklistDone(t); return [c == null ? '미기록' : c ? '모두 지킴' : '일부 놓침']; }
       case 'emotion': return [t.emotion || '(미기록)'];
@@ -1127,6 +1128,7 @@
     }
     let rows = [...g.entries()].map(([key, arr]) => ({ key, ...stats(arr) }));
     if (dash.dim === 'hour') rows.sort((a, b) => a.key.localeCompare(b.key));
+    else if (dash.dim === 'session') rows.sort((a, b) => SESSIONS.indexOf(a.key) - SESSIONS.indexOf(b.key));
     else if (dash.dim === 'weekday') rows.sort((a, b) => ((WEEKDAYS.indexOf(a.key) + 6) % 7) - ((WEEKDAYS.indexOf(b.key) + 6) % 7));
     else if (dash.dim === 'tf') rows.sort((a, b) => TF_ALL.indexOf(a.key) - TF_ALL.indexOf(b.key));
     else if (DATE_DIMS.includes(dash.dim)) rows.sort((a, b) => b.key.localeCompare(a.key));
@@ -2248,13 +2250,13 @@
   const catBit = c => { const k = CB_CATS.indexOf(c.cat); return k < 0 ? 0 : 1 << k; };
   const catCount = m => { let n = 0; for (; m; m &= m - 1) n++; return n; };
   const catTxt = m => CB_CATS.filter((_, k) => m & (1 << k)).join('·');
-  const REASON_ALL = { ...REASON_KO, IND: '지표 청산', TIME: '보유 봉 초과', DAY: '당일 청산' };
+  const REASON_ALL = { ...REASON_KO, IND: '지표 청산', TIME: '보유 봉 초과', DAY: '당일 청산', BE: '본절' };
 
   function cbDefaultCfg() {
     return { dir: 'both', tf: 'H1',
       ind: { b1: { n: 20, k: 2, src: 'close' }, b2: { n: 4, k: 4, src: 'open' }, ma: { n: 20, src: 'close' } },
       conds: [], minScore: 3, scoreV: 2,
-      exit: { sl: 'fixed', slPts: 50, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0 } };
+      exit: { sl: 'fixed', slPts: 50, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0, be: 0 } };
   }
   function cbNorm(c) { c = c && typeof c === 'object' ? c : {}; return cbNormScore(cbNormBase(c), c); }
   function cbNormBase(c) {
@@ -2589,21 +2591,28 @@
   function cbSimulate(X, D, ex, sigB, sigS, range) {
     const { B, N, pt } = X, M = D.t.length, trades = [];
     const slPts = num(ex.slPts) || 0, slBuf = num(ex.slBuf) || 0, tpR = num(ex.tpR) || 0, tpPts = num(ex.tpPts) || 0;
-    const maxBars = Math.round(num(ex.maxBars) || 0);
+    const maxBars = Math.round(num(ex.maxBars) || 0), beR = num(ex.be) || 0;
     for (let i = 1; i < N - 1; i++) {
       const b = sigB ? sigB[i] : 0, sl = sigS ? sigS[i] : 0;
       if (b === sl) continue;   // 신호 없음 또는 양쪽 동시 신호
       const s = b ? 1 : -1, j = i + 1, m0 = B.s[j], E = D.o[m0];
       if (range) { const kt = kstOf(D.t[m0], X.meta); if (kt < range[0]) continue; if (kt > range[1]) break; }
-      const slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : E - s * slPts * pt;
+      let slP;
+      if (ex.sl === 'swing') {   // 직전 저점(매도는 고점) 바깥
+        const P = X.piv(), list = s > 0 ? P.lows : P.highs, pos = (s > 0 ? P.lastL : P.lastH)[i];
+        if (pos < 0) continue;
+        slP = s > 0 ? B.l[list[pos]] - slBuf * pt : B.h[list[pos]] + slBuf * pt;
+      } else slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : E - s * slPts * pt;
       const risk = (E - slP) * s;
       if (!(risk > 0)) continue;
       const tpP = ex.tp === 'r' && tpR > 0 ? E + s * risk * tpR : ex.tp === 'fixed' && tpPts > 0 ? E + s * tpPts * pt : NaN;
-      let k = j, m = m0, exitP = NaN, reason = 'END';
+      let k = j, m = m0, exitP = NaN, reason = 'END', stop = slP, beMoved = false;
+      const beAt = beR > 0 ? E + s * risk * beR : NaN;
       for (; m < M; m++) {
         const o = D.o[m], h = D.h[m], l = D.l[m];
-        if (s > 0 ? l <= slP : h >= slP) { exitP = s > 0 ? Math.min(o, slP) : Math.max(o, slP); reason = 'SL'; break; }
+        if (s > 0 ? l <= stop : h >= stop) { exitP = s > 0 ? Math.min(o, stop) : Math.max(o, stop); reason = beMoved ? 'BE' : 'SL'; break; }
         if (tpP === tpP && (s > 0 ? h >= tpP : l <= tpP)) { exitP = s > 0 ? Math.max(o, tpP) : Math.min(o, tpP); reason = 'TP'; break; }
+        if (!beMoved && beAt === beAt && (s > 0 ? h >= beAt : l <= beAt)) { stop = E; beMoved = true; }   // 다음 1분봉부터 손절을 본절로
         if (ex.dayEnd && m + 1 < M && dayOf(D.t[m + 1]) !== dayOf(D.t[m])) { exitP = D.c[m]; reason = 'DAY'; break; }
         if (m === B.e[k]) {
           if (ex.ind !== 'none' && indExit(X, ex, k, s, E)) { exitP = B.c[k]; reason = 'IND'; break; }
@@ -2766,12 +2775,13 @@
 
       <div class="cb-sec">⑤ 청산</div>
       <div class="cb-grid">
-        <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['candle', '신호봉 꼬리 끝 + 여유']], ex.sl)}</select></div>
+        <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['candle', '신호봉 꼬리 끝 + 여유'], ['swing', '직전 저점·고점 + 여유']], ex.sl)}</select></div>
         ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
         <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['none', '없음']], ex.tp)}</select></div>
         ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ''}
         <div class="field"><label>지표 청산 (봉 마감)</label><select data-cb="ex" data-k="ind">${cbOpts([['none', '안 함'], ['opp', '반대쪽 밴드 찌름'], ['mid', '① 중심선 닿음'], ['ma', '이평 닿음']], ex.ind)}</select></div>
         ${ex.ind === 'opp' ? `<div class="field"><label>반대쪽 밴드</label><select data-cb="ex" data-k="indBand">${cbOpts(BAND_OPTS, ex.indBand)}</select></div>` : ''}
+        <div class="field"><label>본절 이동: 몇 R 가면 (0=안 함)</label>${cbNum('data-cb="ex" data-k="be"', ex.be ?? 0)}</div>
         <div class="field"><label>최대 보유 봉 (0=없음)</label>${cbNum('data-cb="ex" data-k="maxBars"', ex.maxBars)}</div>
         <div class="field"><label>당일 청산</label><select data-cb="ex" data-k="dayEnd">${cbOpts([['0', '안 함'], ['1', 'MT5 하루 끝에 청산']], ex.dayEnd ? '1' : '0')}</select></div>
       </div>
@@ -2837,13 +2847,28 @@
         <div class="kpi"><div class="k">최대 낙폭</div><div class="v down">${pick.st.money.mdd ? '-' + money(pick.st.money.mdd, false) : '$0.00'}</div><div class="s">${pick.st.money.mddPct == null ? '' : '고점 대비 ' + pct(pick.st.money.mddPct, 1)}</div></div>
         <div class="kpi"><div class="k">거래당 평균</div><div class="v ${cls(pick.st.money.total)}">${money(pick.st.money.total / pick.trades.length)}</div><div class="s">${pick.trades.length}건</div></div>
       </div>` : ''}
-      ${cbCatStatsHTML(pick.trades)}${cbTradesHTML(pick.trades)}`;
+      ${cbCatStatsHTML(pick.trades)}${cbSessStatsHTML(pick.trades)}${cbTradesHTML(pick.trades)}`;
     const base = R.res.find(r => r.mask === 0);
     requestAnimationFrame(() => drawMulti($('#cbChart'), [
       ...(base && base !== pick && base.st.n ? [{ color: '#e2e8f0', vals: base.st.curveR, dash: true }] : []),
       ...(pick.st.n ? [{ color: BT_COLORS[0], vals: pick.st.curveR }] : [])]));
   }
 
+  // 장 구분 (한국 시간 기준, 대략): 아시아 07~16시 · 유로 16~22시 · 미장 22~07시
+  const SESSIONS = ['아시아', '유로', '미장'];
+  const sessOf = hh => hh >= 7 && hh < 16 ? '아시아' : hh >= 16 && hh < 22 ? '유로' : '미장';
+  function cbSessStatsHTML(trades) {
+    if (!trades.length) return '';
+    const win = trades.reduce((a, t) => a + Math.max(0, t.profit || 0), 0);
+    const rows = SESSIONS.map(ss => {
+      const g = trades.filter(t => sessOf(+(t.entryTime || '').slice(11, 13)) === ss); if (!g.length) return '';
+      const st = seriesStats(g.map(t => t.points), g.map(t => t.points / t.risk), null), usd = g.reduce((a, t) => a + (t.profit || 0), 0);
+      const share = win > 0 ? g.reduce((a, t) => a + Math.max(0, t.profit || 0), 0) / win : null;
+      return `<tr><td>${ss}</td><td>${st.n}건</td><td>${pct(st.winRate, 1)}</td><td class="${cls(st.expR)}">${rTxt(st.expR)}</td><td class="${cls(usd)}">${money(usd)}</td><td>${pct(share, 0)}</td></tr>`;
+    }).join('');
+    return `<div class="tbl-scroll" style="margin-bottom:12px"><table class="bd cmp"><thead><tr><th style="text-align:left">진입한 장 (한국 시간)</th><th>거래</th><th>승률</th><th>기대값</th><th>손익 $</th><th>익절 비중</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="sub" style="font-size:.74rem;margin:-6px 0 12px">아시아 07~16시 · 유로 16~22시 · 미장 22~07시 기준. 익절 비중은 수익 거래 금액 중 그 장이 차지한 비율이에요. 약한 장은 '시간대' 조건을 '제외'로 넣어 다시 돌려 보세요.</div>`;
+  }
   // 겹친 근거 개수별 성과 (3개일 때 vs 4개 이상일 때)
   function cbCatStatsHTML(trades) {
     const g = {};

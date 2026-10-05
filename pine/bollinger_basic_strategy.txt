@@ -44,8 +44,8 @@ sma20 = ta.sma(close, 20)
 sma120 = ta.sma(close, 120)
 
 // === 4. 터치 조건 ===
-is_touch_upper = high >= upper_band1 and high[1] < upper_band1[1]
-is_touch_lower = low <= lower_band1 and low[1] > lower_band1[1]
+is_touch_upper = high >= upper_band1
+is_touch_lower = low <= lower_band1
 
 is_squeezed = bandwidth < prev_bandwidth * squeeze_ratio
 

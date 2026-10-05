@@ -672,7 +672,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.15.0';
+  const APP_VERSION = 'v1.16.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -3017,11 +3017,33 @@
         <div class="kpi"><div class="k">최대 낙폭</div><div class="v down">${pick.st.money.mdd ? '-' + money(pick.st.money.mdd, false) : '$0.00'}</div><div class="s">${pick.st.money.mddPct == null ? '' : '고점 대비 ' + pct(pick.st.money.mddPct, 1)}</div></div>
         <div class="kpi"><div class="k">거래당 평균</div><div class="v ${cls(pick.st.money.total)}">${money(pick.st.money.total / pick.trades.length)}</div><div class="s">${pick.trades.length}건</div></div>
       </div>` : ''}
-      ${cbCatStatsHTML(pick.trades)}${cbSessStatsHTML(pick.trades)}${cbWinLossHTML(pick.trades)}${cbReachHTML(pick.trades)}<div id="cbTrades">${cbTradesHTML(pick.trades)}</div>`;
+      ${cbReasonSumHTML(pick.trades)}${cbCatStatsHTML(pick.trades)}${cbSessStatsHTML(pick.trades)}${cbWinLossHTML(pick.trades)}${cbReachHTML(pick.trades)}<div id="cbTrades">${cbTradesHTML(pick.trades)}</div>`;
     const base = R.res.find(r => r.mask === 0);
     requestAnimationFrame(() => drawMulti($('#cbChart'), [
       ...(base && base !== pick && base.st.n ? [{ color: '#e2e8f0', vals: base.st.curveR, dash: true }] : []),
       ...(pick.st.n ? [{ color: BT_COLORS[0], vals: pick.st.curveR }] : [])]));
+  }
+
+  // 청산 사유별 합계: 익절·손절·당일 청산 등으로 나눠 건수·pt·$ 합계
+  function cbReasonSumHTML(trades) {
+    if (!trades.length) return '';
+    const order = ['TP', 'SL', 'DAY'], groups = {};
+    for (const t of trades) { const k = order.includes(t.reason) ? t.reason : 'ETC'; (groups[k] = groups[k] || []).push(t); }
+    const hasMoney = trades.some(t => t.profit != null);
+    const sum = (arr, k) => arr.reduce((a, t) => a + (num(t[k]) || 0), 0);
+    const ptTxt = v => `${v > 0 ? '+' : ''}${fx(v, 1)}`;
+    const row = (name, arr, strong) => {
+      const pt = sum(arr, 'points'), usd = sum(arr, 'profit'), w = arr.filter(t => t.points > 0).length;
+      return `<tr${strong ? ' style="font-weight:800"' : ''}><td class="lbl-c">${name}</td><td>${arr.length}건</td><td>${pct(arr.length / trades.length, 0)}</td><td>${w} / ${arr.length - w}</td>
+        <td class="${cls(pt)}">${ptTxt(pt)}</td><td class="${cls(pt)}">${ptTxt(arr.length ? pt / arr.length : 0)}</td>${hasMoney ? `<td class="${cls(usd)}">${money(usd)}</td>` : ''}</tr>`;
+    };
+    const names = { TP: '익절', SL: '손절', DAY: '당일 청산', ETC: '기타 (기간 종료 등)' };
+    return `<div class="cb-sec" style="margin-top:16px">청산 사유별 합계</div>
+      <div class="tbl-scroll"><table class="bd cmp"><thead><tr><th style="text-align:left">청산</th><th>거래</th><th>비중</th><th>수익 / 손실</th><th>손익 pt 합계</th><th>평균 pt</th>${hasMoney ? '<th>손익 $ 합계</th>' : ''}</tr></thead><tbody>
+        ${[...order, 'ETC'].filter(k => groups[k]).map(k => row(names[k], groups[k])).join('')}
+        ${row('합계', trades, true)}
+      </tbody></table></div>
+      <div class="sub" style="font-size:.74rem;margin-top:6px">수익 / 손실 = 손익 pt가 플러스인 거래 수 / 0 이하인 거래 수. 당일 청산은 하루 끝 가격으로 닫아서 수익일 수도 손실일 수도 있어요.</div>`;
   }
 
   // 장 구분 (한국 시간 기준, 대략): 아시아 07~16시 · 유로 16~22시 · 미장 22~07시

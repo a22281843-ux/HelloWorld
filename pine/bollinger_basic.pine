@@ -1,40 +1,48 @@
 //@version=6
 indicator("기본", overlay=true)
 
-// === 1. 기본 밴드 설정 ===
-length1 = input.int(4, title="볼린저 밴드 1 길이", minval=1)
-mult1 = input.float(4.0, title="볼린저 밴드 1 표준편차 배수", minval=0.1)
-src1 = input.source(open, title="볼린저 밴드 1 계산 기준 값")
+// === 1. 볼린저 밴드 1 설정 ===
+grp_bb1 = "볼린저 밴드 1"
+length1 = input.int(20, title="길이", minval=1, group=grp_bb1)
+mult1 = input.float(2.0, title="표준편차 배수", minval=0.1, group=grp_bb1)
+src1 = input.source(open, title="계산 기준 값", group=grp_bb1)
+show_bb1 = input.bool(true, title="표시", inline="bb1_style", group=grp_bb1)
+color_bb1 = input.color(#D34A4C, title="", inline="bb1_style", group=grp_bb1)
+width_bb1 = input.int(1, title="두께", minval=1, maxval=4, inline="bb1_style", group=grp_bb1)
 
-// === 2. 추가 밴드 설정 ===
-length2 = input.int(20, title="볼린저 밴드 2 길이", minval=1)
-mult2 = input.float(2.0, title="볼린저 밴드 2 표준편차 배수", minval=0.1)
-src2 = input.source(open, title="볼린저 밴드 2 계산 기준 값")
+// === 2. 볼린저 밴드 2 설정 ===
+grp_bb2 = "볼린저 밴드 2"
+length2 = input.int(4, title="길이", minval=1, group=grp_bb2)
+mult2 = input.float(4.0, title="표준편차 배수", minval=0.1, group=grp_bb2)
+src2 = input.source(open, title="계산 기준 값", group=grp_bb2)
+show_bb2 = input.bool(true, title="표시", inline="bb2_style", group=grp_bb2)
+color_bb2 = input.color(#FFFFFF, title="", inline="bb2_style", group=grp_bb2)
+width_bb2 = input.int(3, title="두께", minval=1, maxval=4, inline="bb2_style", group=grp_bb2)
 
 squeeze_ratio = input.float(0.8, title="수축 비율", minval=0.01, maxval=0.99)
 
 // === 3. 밴드 계산 ===
-// 밴드 1
+// 볼린저 밴드 1
 ma1 = ta.sma(src1, length1)
 stdev1 = ta.stdev(src1, length1)
 upper_band1 = ma1 + stdev1 * mult1
 lower_band1 = ma1 - stdev1 * mult1
 
-// 밴드 2
+// 볼린저 밴드 2 (터치·수축 신호 기준)
 ma2 = ta.sma(src2, length2)
 stdev2 = ta.stdev(src2, length2)
 upper_band2 = ma2 + stdev2 * mult2
 lower_band2 = ma2 - stdev2 * mult2
 
-bandwidth = upper_band1 - lower_band1
+bandwidth = upper_band2 - lower_band2
 prev_bandwidth = bandwidth[1]
 
 sma20 = ta.sma(close, 20)
 sma120 = ta.sma(close, 120)
 
 // === 4. 터치 조건 ===
-is_touch_upper = high >= upper_band1 and high[1] < upper_band1[1]
-is_touch_lower = low <= lower_band1 and low[1] > lower_band1[1]
+is_touch_upper = high >= upper_band2 and high[1] < upper_band2[1]
+is_touch_lower = low <= lower_band2 and low[1] > lower_band2[1]
 
 is_squeezed = bandwidth < prev_bandwidth * squeeze_ratio
 
@@ -71,19 +79,20 @@ if alert_dc_first
     wait_dc := false
 
 // === 5. 시각화 ===
-plot(sma20, title="20 SMA")
-plot(sma120, title="120 SMA", linewidth=2)
+plot(sma20, title="20 SMA", color=#F6EC62, linewidth=1)
+plot(sma120, title="120 SMA", color=#5361F5, linewidth=2)
 
-plot(upper_band1, title="상단 밴드 1")
-plot(lower_band1, title="하단 밴드 1")
+// 볼린저 밴드는 상단·하단을 인풋 탭의 그룹 하나로 함께 설정 (모습 탭에서는 숨김)
+plot(show_bb1 ? upper_band1 : na, title="볼린저 밴드 1 상단", color=color_bb1, linewidth=width_bb1, editable=false)
+plot(show_bb1 ? lower_band1 : na, title="볼린저 밴드 1 하단", color=color_bb1, linewidth=width_bb1, editable=false)
 
-plot(upper_band2, title="상단 밴드 2", linewidth=1)
-plot(lower_band2, title="하단 밴드 2", linewidth=1)
+plot(show_bb2 ? upper_band2 : na, title="볼린저 밴드 2 상단", color=color_bb2, linewidth=width_bb2, editable=false)
+plot(show_bb2 ? lower_band2 : na, title="볼린저 밴드 2 하단", color=color_bb2, linewidth=width_bb2, editable=false)
 
-plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, title="수축 상단")
-plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, title="수축 하단")
-plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, title="골크 첫터치")
-plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, title="데크 첫터치")
+plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, color=#FFFFFF, title="수축 상단")
+plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, color=#FFFFFF, title="수축 하단")
+plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, color=#F6EC62, title="골크 첫터치")
+plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, color=#D34A4C, title="데크 첫터치", display=display.none)
 
 // === 6. 알림 ===
 alertcondition(alert_sq_upper, "1. 수축후 상단터치", "수축원비 매도!")

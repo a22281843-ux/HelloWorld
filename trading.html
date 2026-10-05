@@ -667,7 +667,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.10.0';
+  const APP_VERSION = 'v1.11.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2212,8 +2212,9 @@
       text: p => p.mode === 'against' ? `매수: 이평이 내려가는 중 / 매도: 올라가는 중 (${p.look}봉 전과 비교)` : `매수: 이평 상승 / 매도: 이평 하락 (${p.look}봉 전과 비교)` },
     touch: { name: '밴드 찌름', params: [
         { k: 'band', label: '밴드', opts: BAND_OPTS, def: 'any' },
-        { k: 'side', label: '방향', opts: [['rev', '매수=하단 · 매도=상단'], ['brk', '매수=상단 · 매도=하단 (돌파)']], def: 'rev' }],
-      text: p => `${p.side === 'brk' ? '매수: 상단 / 매도: 하단' : '매수: 하단 / 매도: 상단'}을 ${BAND_KO[p.band]} 찌름` },
+        { k: 'side', label: '방향', opts: [['rev', '매수=하단 · 매도=상단'], ['brk', '매수=상단 · 매도=하단 (돌파)']], def: 'rev' },
+        { k: 'fresh', label: '찌름 방식', opts: [['any', '닿으면 인정'], ['new', '새로 찌름 (직전 봉은 안 닿음)']], def: 'any' }],
+      text: p => `${p.side === 'brk' ? '매수: 상단 / 매도: 하단' : '매수: 하단 / 매도: 상단'}을 ${BAND_KO[p.band]} ${p.fresh === 'new' ? '새로 찌름 (직전 봉은 안 닿음)' : '찌름'}` },
     inside: { name: '밴드 안 마감', params: [{ k: 'band', label: '밴드', opts: BAND_OPTS, def: 'both' }],
       text: p => `매수: 하단선 위 / 매도: 상단선 아래에서 마감 (${BAND_KO[p.band]})` },
     candle: { name: '캔들 색', params: [], text: () => '매수: 양봉 / 매도: 음봉' },
@@ -2233,6 +2234,10 @@
       text: p => p.mode === 'against' ? '매수: 종가가 이평 아래 / 매도: 종가가 이평 위' : '매수: 종가가 이평 위 / 매도: 종가가 이평 아래 (추세 쪽에서 눌림)' },
     move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
       text: p => `직전 ${p.n}봉 동안 ${p.pts}pt 이상 반대로 움직임 (매수: 하락 뒤 / 매도: 상승 뒤)` },
+    squeeze: { name: '밴드 수축', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b2' }, { k: 'ratio', label: '직전 봉 폭의 몇 배 미만', def: 0.8 }],
+      text: p => `${p.band === 'b1' ? '①' : '②'} 밴드 폭이 직전 봉 폭의 ${p.ratio}배 미만으로 줄어듦 (매수·매도 공통)` },
+    crossfirst: { name: '골크·데크 후 첫 찌름', params: [{ k: 'fast', label: '짧은 이평', def: 20 }, { k: 'slow', label: '긴 이평', def: 120 }, { k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b2' }],
+      text: p => `매수: ${p.fast}·${p.slow} 이평(종가) 골든크로스 뒤 ${p.band === 'b1' ? '①' : '②'} 하단을 처음 새로 찌름 / 매도: 데드크로스 뒤 상단을 처음 새로 찌름 (반대 크로스가 나오면 취소)` },
     expand: { name: '밴드 확장', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b1' }, { k: 'look', label: '몇 봉 전보다 넓음', def: 1 }],
       text: p => `${p.band === 'b2' ? '②' : '①'} 밴드 폭이 ${p.look}봉 전보다 넓어짐 (매수·매도 공통)` },
     strong: { name: '강한 캔들 (꼬리 없는 장대)', params: [{ k: 'body', label: '몸통 ≥ 봉 길이 %', def: 60 }, { k: 'tail', label: '진행 방향 꼬리 ≤ %', def: 15 }],
@@ -2257,18 +2262,18 @@
   // 더캔이지추격깨: 조건마다 근거 카테고리를 붙이고, 겹친 카테고리 수로 진입 여부를 판단
   const CB_CATS = ['더', '캔', '이', '지', '추', '격', '깨'];
   const CB_CAT_NAME = { 더: '더블비', 캔: '캔들', 이: '이평선', 지: '지지·저항', 추: '추세선·패턴', 격: '이격도·RSI', 깨: '깨짐(돌파)' };
-  const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', candle: '캔', nowick: '캔', longwick: '캔', strong: '캔', hold: '지',
+  const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', squeeze: '더', crossfirst: '이', candle: '캔', nowick: '캔', longwick: '캔', strong: '캔', hold: '지',
     ma: '이', stack: '이', matouch: '이', maside: '이', zone: '지', pullcnt: '이', ext: '이', nbrk: '깨', daybrk: '깨', dbl: '추', move: '추', div: '격', rsi3: '격', time: '' };
   const catBit = c => { const k = CB_CATS.indexOf(c.cat); return k < 0 ? 0 : 1 << k; };
   const catCount = m => { let n = 0; for (; m; m &= m - 1) n++; return n; };
   const catTxt = m => CB_CATS.filter((_, k) => m & (1 << k)).join('·');
-  const REASON_ALL = { ...REASON_KO, IND: '지표 청산', TIME: '보유 봉 초과', DAY: '당일 청산', BE: '본절' };
+  const REASON_ALL = { ...REASON_KO, IND: '지표 청산', SIG: '반대 신호', TIME: '보유 봉 초과', DAY: '당일 청산', BE: '본절' };
 
   function cbDefaultCfg() {
     return { dir: 'both', tf: 'H1',
       ind: { b1: { n: 20, k: 2, src: 'close' }, b2: { n: 4, k: 4, src: 'open' }, ma: { n: 20, src: 'close' } },
       conds: [], minScore: 3, scoreV: 2,
-      exit: { sl: 'fixed', slPts: 50, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0, be: 0 } };
+      exit: { sl: 'fixed', slPts: 50, slPct: 1, slBuf: 5, tp: 'r', tpR: 2, tpPts: 100, tpPct: 2, ind: 'none', indBand: 'any', maxBars: 0, dayEnd: false, cost: 0, be: 0 } };
   }
   function cbNorm(c) { c = c && typeof c === 'object' ? c : {}; return cbNormScore(cbNormBase(c), c); }
   function cbNormBase(c) {
@@ -2468,7 +2473,8 @@
       piv: once(() => pivots(B, 3)),
       rsiCnt: once(() => rsiCounts(rsiArr(B.c, 14), 30, 70)),
       zones: once(() => ({ 1: zoneArr(B, 1), '-1': zoneArr(B, -1) })),
-      pulls: once(() => ({ 1: pullArr(B, X_MA, 1), '-1': pullArr(B, X_MA, -1) })) };
+      pulls: once(() => ({ 1: pullArr(B, X_MA, 1), '-1': pullArr(B, X_MA, -1) })),
+      crossFirst: (() => { const c = {}; return (p, s) => { const f = Math.max(1, Math.round(num(p.fast) ?? 20)), sl = Math.max(1, Math.round(num(p.slow) ?? 120)), k = `${f}|${sl}|${p.band}|${s}`; return c[k] || (c[k] = crossFirstArr(X_SELF, f, sl, p.band, s)); }; })() };
     return X_SELF;
   }
   const once = f => { let v; return () => v || (v = f()); };
@@ -2533,6 +2539,18 @@
     }
     return out;
   }
+  // 골든크로스(매수)·데드크로스(매도) 뒤 밴드를 처음 새로 찌른 봉. 반대 크로스가 나오면 기다림 취소 (트레이딩뷰 '기본' 지표와 같은 방식)
+  function crossFirstArr(X, fast, slow, band, s) {
+    const { B, N } = X, f = X.smaN(fast), sl = X.smaN(slow), bd = band === 'b1' ? X.b1 : X.b2, out = new Uint8Array(N);
+    let wait = false;
+    for (let i = 1; i < N; i++) {
+      if (f[i] > sl[i] && f[i - 1] <= sl[i - 1]) wait = s > 0;
+      if (f[i] < sl[i] && f[i - 1] >= sl[i - 1]) wait = s < 0;
+      const touch = s > 0 ? B.l[i] <= bd.l[i] && B.l[i - 1] > bd.l[i - 1] : B.h[i] >= bd.u[i] && B.h[i - 1] < bd.u[i - 1];
+      if (wait && touch) { out[i] = 1; wait = false; }
+    }
+    return out;
+  }
   function bandTest(X, mode, fn) {
     return mode === 'both' ? fn(X.b1) && fn(X.b2) : mode === 'b1' ? fn(X.b1) : mode === 'b2' ? fn(X.b2) : fn(X.b1) || fn(X.b2);
   }
@@ -2544,7 +2562,12 @@
         const d = X.ma[i] - X.ma[j]; if (!(d === d)) return false;
         return (p.mode === 'against') !== buy ? d > 0 : d < 0;
       }
-      case 'touch': { const up = p.side === 'brk' ? buy : !buy; return bandTest(X, p.band, b => up ? h >= b.u[i] : l <= b.l[i]); }
+      case 'touch': {
+        const up = p.side === 'brk' ? buy : !buy, fresh = p.fresh === 'new';
+        return bandTest(X, p.band, b => up ? h >= b.u[i] && (!fresh || (i > 0 && B.h[i - 1] < b.u[i - 1])) : l <= b.l[i] && (!fresh || (i > 0 && B.l[i - 1] > b.l[i - 1])));
+      }
+      case 'squeeze': { const b = p.band === 'b1' ? X.b1 : X.b2; return i > 0 && (b.u[i] - b.l[i]) < (b.u[i - 1] - b.l[i - 1]) * (num(p.ratio) ?? 0.8); }
+      case 'crossfirst': return X.crossFirst(p, s)[i] === 1;
       case 'inside': return bandTest(X, p.band, b => buy ? cl > b.l[i] : cl < b.u[i]);
       case 'candle': return buy ? cl > o : cl < o;
       case 'nowick': case 'longwick': {
@@ -2659,9 +2682,11 @@
     return false;
   }
 
-  function cbSimulate(X, D, ex, sigB, sigS, range) {
+  // exB·exS: '반대 신호' 청산에 쓰는 매수·매도 신호 (진입 방향을 한쪽만 골라도 반대쪽 신호를 계산해서 넘김)
+  function cbSimulate(X, D, ex, sigB, sigS, range, exB = sigB, exS = sigS) {
     const { B, N, pt } = X, M = D.t.length, trades = [];
     const slPts = num(ex.slPts) || 0, slBuf = num(ex.slBuf) || 0, tpR = num(ex.tpR) || 0, tpPts = num(ex.tpPts) || 0;
+    const slPct = num(ex.slPct) || 0, tpPct = num(ex.tpPct) || 0;
     const maxBars = Math.round(num(ex.maxBars) || 0), beR = num(ex.be) || 0;
     for (let i = 1; i < N - 1; i++) {
       const b = sigB ? sigB[i] : 0, sl = sigS ? sigS[i] : 0;
@@ -2673,10 +2698,10 @@
         const P = X.piv(), list = s > 0 ? P.lows : P.highs, pos = (s > 0 ? P.lastL : P.lastH)[i];
         if (pos < 0) continue;
         slP = s > 0 ? B.l[list[pos]] - slBuf * pt : B.h[list[pos]] + slBuf * pt;
-      } else slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : E - s * slPts * pt;
+      } else slP = ex.sl === 'candle' ? (s > 0 ? B.l[i] - slBuf * pt : B.h[i] + slBuf * pt) : ex.sl === 'pct' ? E * (1 - s * slPct / 100) : E - s * slPts * pt;
       const risk = (E - slP) * s;
       if (!(risk > 0)) continue;
-      const tpP = ex.tp === 'r' && tpR > 0 ? E + s * risk * tpR : ex.tp === 'fixed' && tpPts > 0 ? E + s * tpPts * pt : NaN;
+      const tpP = ex.tp === 'r' && tpR > 0 ? E + s * risk * tpR : ex.tp === 'fixed' && tpPts > 0 ? E + s * tpPts * pt : ex.tp === 'pct' && tpPct > 0 ? E * (1 + s * tpPct / 100) : NaN;
       let k = j, m = m0, exitP = NaN, reason = 'END', stop = slP, beMoved = false;
       const beAt = beR > 0 ? E + s * risk * beR : NaN;
       for (; m < M; m++) {
@@ -2686,7 +2711,7 @@
         if (!beMoved && beAt === beAt && (s > 0 ? h >= beAt : l <= beAt)) { stop = E; beMoved = true; }   // 다음 1분봉부터 손절을 본절로
         if (ex.dayEnd && m + 1 < M && dayOf(D.t[m + 1]) !== dayOf(D.t[m])) { exitP = D.c[m]; reason = 'DAY'; break; }
         if (m === B.e[k]) {
-          if (ex.ind !== 'none' && indExit(X, ex, k, s, E)) { exitP = B.c[k]; reason = 'IND'; break; }
+          if (ex.ind === 'sig' ? !!(s > 0 ? exS : exB)?.[k] : ex.ind !== 'none' && indExit(X, ex, k, s, E)) { exitP = B.c[k]; reason = ex.ind === 'sig' ? 'SIG' : 'IND'; break; }
           if (maxBars > 0 && k - j + 1 >= maxBars) { exitP = B.c[k]; reason = 'TIME'; break; }
           k++;
         }
@@ -2717,9 +2742,9 @@
     if (!req.length && !score.length) return null;
     const minScore = Math.max(1, Math.round(num(cfg.minScore) ?? 3));
     const X = cbContext(D, cfg, meta), sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
-    const sig = {};
+    const sig = {}, useSig = cfg.exit.ind === 'sig';
     for (const s of [1, -1]) {
-      if (!sides.includes(s)) { sig[s] = null; continue; }
+      if (!sides.includes(s) && !useSig) { sig[s] = null; continue; }
       const out = new Uint8Array(X.N).fill(1), cats = new Uint8Array(X.N); let base = 0;
       for (const c of req) { const a = condArray(X, c, s), neg = c.role === 'not'; if (!neg) base |= catBit(c); for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
       const sb = new Uint8Array(X.N);
@@ -2727,7 +2752,7 @@
       for (let i = 0; i < X.N; i++) { cats[i] = base | sb[i]; if (score.length && catCount(cats[i]) < minScore) out[i] = 0; }
       out.cats = cats; sig[s] = out;
     }
-    return cbSimulate(X, D, cfg.exit, sig[1], sig[-1], range);
+    return cbSimulate(X, D, cfg.exit, sides.includes(1) ? sig[1] : null, sides.includes(-1) ? sig[-1] : null, range, sig[1], sig[-1]);
   }
   async function cbCompareAll() {
     const D = await cbGetData(cb.data);
@@ -2773,23 +2798,25 @@
     if (!req.length && !opt.length && !cfg.conds.some(c => c.role === 'score')) { toast('조건을 하나 이상 추가하세요'); return; }
     if (opt.length > CB_MAX_OPT) { toast(`비교 조건은 ${CB_MAX_OPT}개까지 가능합니다 (${2 ** CB_MAX_OPT}개 조합)`, 3500); return; }
     if (cfg.exit.sl === 'fixed' && !(num(cfg.exit.slPts) > 0)) { toast('손절 pt를 입력하세요'); return; }
+    if (cfg.exit.sl === 'pct' && !(num(cfg.exit.slPct) > 0)) { toast('손절 %를 입력하세요'); return; }
     cb.busy = true; renderCBRunBtn();
     await new Promise(r => setTimeout(r, 30));
     try {
       const meta = cbMeta(cb.data) || { point: 1, gmt: 2, dst: true, pv: 1, comm: 0 };
       const X = cbContext(D, cfg, meta);
       const sides = cfg.dir === 'buy' ? [1] : cfg.dir === 'sell' ? [-1] : [1, -1];
+      const need = cfg.exit.ind === 'sig' ? [1, -1] : sides;   // 반대 신호 청산이면 반대쪽 신호도 계산
       const arr = new Map();
-      for (const c of [...req, ...opt, ...score]) arr.set(c.id, { 1: sides.includes(1) ? condArray(X, c, 1) : null, '-1': sides.includes(-1) ? condArray(X, c, -1) : null });
+      for (const c of [...req, ...opt, ...score]) arr.set(c.id, { 1: need.includes(1) ? condArray(X, c, 1) : null, '-1': need.includes(-1) ? condArray(X, c, -1) : null });
       // 점수 조건이 맞은 근거 카테고리(봉마다 비트)
       const scoreBits = {};
-      for (const s of sides) {
+      for (const s of need) {
         const b = new Uint8Array(X.N);
         for (const c of score) { const a = arr.get(c.id)[s], bit = catBit(c); if (bit) for (let i = 0; i < X.N; i++) if (a[i]) b[i] |= bit; }
         scoreBits[s] = b;
       }
       const and = (set, s) => {
-        if (!sides.includes(s)) return null;
+        if (!need.includes(s)) return null;
         const out = new Uint8Array(X.N).fill(1), cats = new Uint8Array(X.N);
         let base = 0;
         for (const c of set) { const a = arr.get(c.id)[s], neg = c.role === 'not'; if (!neg) base |= catBit(c); for (let i = 0; i < X.N; i++) out[i] &= neg ? 1 - a[i] : a[i]; }
@@ -2807,7 +2834,8 @@
       for (let mask = 0; mask < 2 ** opt.length; mask++) {
         const set = [...req, ...opt.filter((_, b) => mask & (1 << b))];
         if (!set.length && !score.length) continue;
-        const trades = cbSimulate(X, D, cfg.exit, and(set, 1), and(set, -1), range);
+        const aB = and(set, 1), aS = and(set, -1);
+        const trades = cbSimulate(X, D, cfg.exit, sides.includes(1) ? aB : null, sides.includes(-1) ? aS : null, range, aB, aS);
         const st = seriesStats(trades.map(t => t.points), trades.map(t => t.points / t.risk), months);
         st.curveR = cumulative(trades.map(t => t.points / t.risk));
         st.avgRisk = trades.length ? trades.reduce((a, t) => a + t.risk, 0) / trades.length : null;
@@ -2908,11 +2936,11 @@
 
       <div class="cb-sec">⑤ 청산</div>
       <div class="cb-grid">
-        <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['candle', '신호봉 꼬리 끝 + 여유'], ['swing', '직전 저점·고점 + 여유']], ex.sl)}</select></div>
-        ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
-        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['none', '없음']], ex.tp)}</select></div>
-        ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ''}
-        <div class="field"><label>지표 청산 (봉 마감)</label><select data-cb="ex" data-k="ind">${cbOpts([['none', '안 함'], ['opp', '반대쪽 밴드 찌름'], ['mid', '① 중심선 닿음'], ['ma', '이평 닿음']], ex.ind)}</select></div>
+        <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['pct', '진입가의 %'], ['candle', '신호봉 꼬리 끝 + 여유'], ['swing', '직전 저점·고점 + 여유']], ex.sl)}</select></div>
+        ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : ex.sl === 'pct' ? `<div class="field"><label>손절 %</label>${cbNum('data-cb="ex" data-k="slPct"', ex.slPct)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
+        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['pct', '진입가의 %'], ['none', '없음']], ex.tp)}</select></div>
+        ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ex.tp === 'pct' ? `<div class="field"><label>익절 %</label>${cbNum('data-cb="ex" data-k="tpPct"', ex.tpPct)}</div>` : ''}
+        <div class="field"><label>지표 청산 (봉 마감)</label><select data-cb="ex" data-k="ind">${cbOpts([['none', '안 함'], ['sig', '반대 신호 (같은 조건의 반대 방향)'], ['opp', '반대쪽 밴드 찌름'], ['mid', '① 중심선 닿음'], ['ma', '이평 닿음']], ex.ind)}</select></div>
         ${ex.ind === 'opp' ? `<div class="field"><label>반대쪽 밴드</label><select data-cb="ex" data-k="indBand">${cbOpts(BAND_OPTS, ex.indBand)}</select></div>` : ''}
         <div class="field"><label>본절 이동: 몇 R 가면 (0=안 함)</label>${cbNum('data-cb="ex" data-k="be"', ex.be ?? 0)}</div>
         <div class="field"><label>최대 보유 봉 (0=없음)</label>${cbNum('data-cb="ex" data-k="maxBars"', ex.maxBars)}</div>
@@ -3091,12 +3119,12 @@
     const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
     if (!r.trades.length) { toast('거래가 없는 조합은 저장할 수 없어요'); return; }
     const st = cb.stId && findSt(cb.stId), ex = R.cfg.exit;
-    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : 'TP 없음';
+    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : ex.tp === 'pct' ? `TP ${ex.tpPct}%` : 'TP 없음';
     const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
       sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
       from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: c.role === 'not' ? 'not' : 'req' })).concat((R.score || []).map(c => ({ ...c }))) },
       lots: R.mm.mode === 'lots' ? num(R.mm.lots) : null,
-      name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : 'SL 신호봉'} / ${tpTxt} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`} · ${R.from.slice(0, 10)}~${R.to.slice(0, 10)}`,
+      name: `${st ? st.name + ' · ' : ''}${R.name} ${R.cfg.tf} · ${cbComboLabel(R, r) || '조건'} · ${ex.sl === 'fixed' ? `SL ${ex.slPts}pt` : ex.sl === 'pct' ? `SL ${ex.slPct}%` : ex.sl === 'swing' ? 'SL 직전 고·저점' : 'SL 신호봉'} / ${tpTxt} · ${R.mm.mode === 'risk' ? `위험 ${R.mm.risk}%` : `${R.mm.lots}랏`} · ${R.from.slice(0, 10)}~${R.to.slice(0, 10)}`,
       trades: r.trades.map(t => ({ ...t })) };
     addRun(run);
     if (st && !st.btIds.includes(run.id)) { st.btIds.push(run.id); save(); }

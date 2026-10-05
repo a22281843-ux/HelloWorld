@@ -2239,6 +2239,12 @@
       text: p => `매수: 쌍바닥 / 매도: 쌍봉 (양옆 3봉 고·저점 2개, 5~60봉 간격, 차이 ${p.tol}pt 이내) · ${p.mode === 'second' ? `두 번째 바닥 확인 후 ${p.within}봉 안` : '넥라인을 넘은 뒤 넥라인까지 되돌려 닿고 넥라인 위에서 마감 (매도는 반대)'}` },
     rsi3: { name: 'RSI 과매도·과매수 3회', params: [{ k: 'n', label: '몇 번째부터', def: 3 }, { k: 'within', label: '마지막 진입 후 몇 봉 안', def: 5 }, { k: 'side', label: '방향', opts: [['same', '진입 방향 신호'], ['opp', '반대 방향 신호']], def: 'same' }],
       text: p => `${p.side === 'opp' ? '반대: ' : ''}매수: RSI(14) 30 아래 ${p.n}번째 (달러 주머니) / 매도: 70 위 ${p.n}번째 (빨간 봉우리), 반대쪽에 가면 다시 셈, 최근 ${p.within}봉 안` },
+    zone: { name: '매물대 지지·저항', params: [{ k: 'ma', label: '이평 겹침', opts: [['any', '상관없음'], ['ma', '이평이 매물대 안을 지날 때만']], def: 'any' }, { k: 'look', label: '매물대 유효 봉 수', def: 100 }],
+      text: p => `매수: 하락을 상승으로 바꾼 장악 양봉(직전 음봉 몸통을 덮음)의 저가~고가 영역에 닿고 영역 위에서 마감 / 매도: 반대${p.ma === 'ma' ? ' · 이평이 그 영역 안을 지날 때만' : ''} (종가로 영역을 깨면 무효, ${p.look}봉 지나면 만료)` },
+    pullcnt: { name: '몇 번째 눌림', params: [{ k: 'max', label: '최대 몇 번째까지', def: 2 }],
+      text: p => `매수: 종가가 이평을 상향 돌파한 뒤 이평에 닿는 눌림이 ${p.max}번째 이내 (종가가 이평 아래로 마감하면 다시 셈) / 매도: 반대` },
+    ext: { name: '이격 작음 (과열 아님)', params: [{ k: 'n', label: '최근 N봉', def: 20 }, { k: 'pts', label: '이평과 최대 거리 ≤ pt', def: 150 }],
+      text: p => `최근 ${p.n}봉 동안 가격이 이평에서 진입 방향으로 ${p.pts}pt 넘게 벌어진 적 없음 (매물대 없이 멀리 간 눌림 걸러내기)` },
     time: { name: '시간대 (한국 시간)', params: [{ k: 'from', label: '시작 시', def: 16 }, { k: 'to', label: '끝 시', def: 2 }],
       text: p => `한국 시간 ${p.from}시 ~ ${p.to}시 사이 신호만` },
   };
@@ -2246,7 +2252,7 @@
   const CB_CATS = ['더', '캔', '이', '지', '추', '격', '깨'];
   const CB_CAT_NAME = { 더: '더블비', 캔: '캔들', 이: '이평선', 지: '지지·저항', 추: '추세선·패턴', 격: '이격도·RSI', 깨: '깨짐(돌파)' };
   const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', candle: '캔', nowick: '캔', longwick: '캔', strong: '캔', hold: '지',
-    ma: '이', stack: '이', matouch: '이', maside: '이', nbrk: '깨', daybrk: '깨', dbl: '추', move: '추', div: '격', rsi3: '격', time: '' };
+    ma: '이', stack: '이', matouch: '이', maside: '이', zone: '지', pullcnt: '이', ext: '이', nbrk: '깨', daybrk: '깨', dbl: '추', move: '추', div: '격', rsi3: '격', time: '' };
   const catBit = c => { const k = CB_CATS.indexOf(c.cat); return k < 0 ? 0 : 1 << k; };
   const catCount = m => { let n = 0; for (; m; m &= m - 1) n++; return n; };
   const catTxt = m => CB_CATS.filter((_, k) => m & (1 << k)).join('·');
@@ -2445,12 +2451,15 @@
       hi = Math.max(hi, B.h[i]); lo = Math.min(lo, B.l[i]);
       kstH[i] = new Date(kstOf(B.t[i], meta)).getUTCHours();
     }
+    const X_MA = sma(src(ma.src), pi(ma.n, 20));
     return { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
-      b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: sma(src(ma.src), pi(ma.n, 20)),
+      b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: X_MA,
       smaN: (() => { const c = {}; return n => c[n] || (c[n] = sma(B.c, n)); })(),
       disp: once(() => { const m = sma(B.c, 20); return B.c.map((v, i) => (v / m[i] - 1) * 100); }),
       piv: once(() => pivots(B, 3)),
-      rsiCnt: once(() => rsiCounts(rsiArr(B.c, 14), 30, 70)) };
+      rsiCnt: once(() => rsiCounts(rsiArr(B.c, 14), 30, 70)),
+      zones: once(() => ({ 1: zoneArr(B, 1), '-1': zoneArr(B, -1) })),
+      pulls: once(() => ({ 1: pullArr(B, X_MA, 1), '-1': pullArr(B, X_MA, -1) })) };
   }
   const once = f => { let v; return () => v || (v = f()); };
   // 양옆 k봉보다 낮은(높은) 봉 = 저점(고점). k봉 뒤에야 확정되므로 확정 시점 기준으로 위치를 기록
@@ -2485,6 +2494,34 @@
       cntL[i] = cl; cntH[i] = ch; sinceL[i] = i - lastL; sinceH[i] = i - lastH;
     }
     return { cntL, cntH, sinceL, sinceH };
+  }
+  // 매물대: 방향을 바꾼 장악형 캔들(+직전 캔들)의 저가~고가. 그 봉 다음부터 유효, 종가로 반대쪽을 깨면 무효
+  function zoneArr(B, s) {
+    const N = B.t.length, lo = new Float64Array(N).fill(NaN), hi = new Float64Array(N).fill(NaN), at = new Int32Array(N).fill(-1);
+    let zl = NaN, zh = NaN, za = -1;
+    for (let i = 0; i < N; i++) {
+      if (zl === zl && (s > 0 ? B.c[i] < zl : B.c[i] > zh)) { zl = zh = NaN; za = -1; }
+      lo[i] = zl; hi[i] = zh; at[i] = za;
+      if (i >= 4) {
+        const o = B.o, c = B.c, eng = s > 0
+          ? c[i] > o[i] && o[i - 1] > c[i - 1] && c[i] >= o[i - 1] && o[i] <= c[i - 1] && c[i - 1] < c[i - 4]
+          : c[i] < o[i] && o[i - 1] < c[i - 1] && c[i] <= o[i - 1] && o[i] >= c[i - 1] && c[i - 1] > c[i - 4];
+        if (eng) { zl = Math.min(B.l[i], B.l[i - 1]); zh = Math.max(B.h[i], B.h[i - 1]); za = i; }
+      }
+    }
+    return { lo, hi, at };
+  }
+  // 이평 돌파 후 몇 번째 눌림인지 (이평에 새로 닿은 봉에만 번호, 종가가 이평 반대편이면 리셋)
+  function pullArr(B, ma, s) {
+    const N = B.t.length, out = new Int16Array(N); let cnt = -1, away = false;
+    for (let i = 1; i < N; i++) {
+      const m = ma[i]; if (!(m === m)) continue;
+      const above = s > 0 ? B.c[i] > m : B.c[i] < m, touch = s > 0 ? B.l[i] <= m : B.h[i] >= m;
+      if (!above) { cnt = -1; away = false; continue; }
+      if (cnt < 0) { cnt = 0; away = !touch; continue; }
+      if (touch) { if (away) { cnt++; out[i] = cnt; } away = false; } else away = true;
+    }
+    return out;
   }
   function bandTest(X, mode, fn) {
     return mode === 'both' ? fn(X.b1) && fn(X.b2) : mode === 'b1' ? fn(X.b1) : mode === 'b2' ? fn(X.b2) : fn(X.b1) || fn(X.b2);
@@ -2562,6 +2599,19 @@
       case 'rsi3': {
         const up = p.side === 'opp' ? !buy : buy, R = X.rsiCnt();
         return (up ? R.cntL[i] : R.cntH[i]) >= Math.max(1, Math.round(num(p.n) ?? 3)) && (up ? R.sinceL[i] : R.sinceH[i]) <= Math.max(0, Math.round(num(p.within) ?? 5));
+      }
+      case 'zone': {
+        const Z = X.zones()[buy ? 1 : -1], zl = Z.lo[i], zh = Z.hi[i];
+        if (!(zl === zl) || i - Z.at[i] > Math.max(1, Math.round(num(p.look) ?? 100))) return false;
+        const hit = buy ? l <= zh && cl >= zl : h >= zl && cl <= zh;
+        if (!hit || p.ma !== 'ma') return hit;
+        const m = X.ma[i], pad = (zh - zl) * 0.2; return m >= zl - pad && m <= zh + pad;
+      }
+      case 'pullcnt': { const n = X.pulls()[buy ? 1 : -1][i]; return n >= 1 && n <= Math.max(1, Math.round(num(p.max) ?? 2)); }
+      case 'ext': {
+        const n = Math.max(1, Math.round(num(p.n) ?? 20)), lim = (num(p.pts) ?? 150) * X.pt; if (i < n) return false;
+        for (let j = i - n + 1; j <= i; j++) { const m = X.ma[j]; if (!(m === m)) return false; if ((buy ? B.h[j] - m : m - B.l[j]) > lim) return false; }
+        return true;
       }
       case 'time': {
         const hr = X.kstH[i], f = Math.round(num(p.from) ?? 0), t = Math.round(num(p.to) ?? 24);

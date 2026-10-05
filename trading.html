@@ -3011,8 +3011,8 @@
       btIds: [], btKey: '', reviews: [], imgCount: 0, createdAt: new Date().toISOString(), ...o };
   }
   function newLesson(o = {}) {
-    const last = [...S.lessons].sort((a, b) => (a.no || 0) - (b.no || 0)).pop();
-    return { id: uid(), course: last ? last.course : '', no: last ? (num(last.no) || 0) + 1 : 1, title: '', date: ymd(new Date()),
+    const last = [...S.lessons].sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0)).pop();
+    return { id: uid(), course: last ? last.course : '', no: S.lessons.length + 1, title: '', date: ymd(new Date()),
       summary: '', points: [], rules: '', terms: '', questions: '', memo: '', strategyIds: [], imgCount: 0, ...o };
   }
   function ensureSetup(name) {
@@ -3105,17 +3105,23 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
 
   function lessonListHTML() {
     if (!S.lessons.length) return `<div class="card empty">아직 강의 필기가 없습니다.<br><br>강의 <b>한 회차 = 필기 한 장</b>으로 쌓아 두면, 나중에 회차 순서대로 다시 보거나 여러 회차에서 배운 내용을 하나의 전략 카드로 모을 수 있어요.<br><br><b>예시 넣기</b>를 누르면 회차별로 쌓인 모습을 볼 수 있습니다.</div>`;
-    const byCourse = {};
-    for (const l of S.lessons) (byCourse[l.course || '강의명 없음'] = byCourse[l.course || '강의명 없음'] || []).push(l);
-    return Object.entries(byCourse).map(([course, arr]) => `
-      <div class="course-head"><span>${esc(course)}</span><span class="sub" style="font-size:.78rem;font-weight:600">${arr.length}회차</span></div>
-      <div class="st-grid">${arr.sort((a, b) => (num(a.no) || 0) - (num(b.no) || 0)).map(l => `
+    renumberLessons();
+    const arr = [...S.lessons].sort((a, b) => a.no - b.no);
+    return `<div class="course-head"><span>전체 ${arr.length}회차</span><span class="sub" style="font-size:.78rem;font-weight:600">회차 순서는 필기 안 '회차' 숫자로 바꿀 수 있어요</span></div>
+      <div class="st-grid">${arr.map(l => `
         <div class="st-card" data-action="ls-open" data-id="${l.id}">
           <div class="st-title"><span class="lesson-no">${esc(l.no)}회차</span>${esc(l.title || '(제목 없음)')}${l.example ? '<span class="badge ex">예시</span>' : ''}</div>
-          <div class="st-sub">${esc(l.date || '')}${l.strategyIds.length ? ' · 전략: ' + l.strategyIds.map(id => findSt(id)).filter(Boolean).map(x => esc(x.name)).join(', ') : ''}</div>
+          <div class="st-sub">${esc([l.date, l.course].filter(Boolean).join(' · '))}${l.strategyIds.length ? ' · 전략: ' + l.strategyIds.map(id => findSt(id)).filter(Boolean).map(x => esc(x.name)).join(', ') : ''}</div>
           ${l.summary ? `<div class="st-sum">${esc(l.summary)}</div>` : ''}
           <div class="st-foot">핵심 포인트 ${l.points.length}${l.questions ? ' · 질문 있음' : ''}${l.imgCount ? ' · 📷' + l.imgCount : ''}</div>
-        </div>`).join('')}</div>`).join('');
+        </div>`).join('')}</div>`;
+  }
+  // 회차를 1부터 빈칸 없이 다시 매김 (적힌 회차 → 날짜 → 만든 순서). 지우거나 회차를 고치면 자동으로 정렬됨
+  function renumberLessons() {
+    const arr = [...S.lessons].sort((a, b) => ((num(a.no) ?? 1e9) - (num(b.no) ?? 1e9)) || String(a.date || '').localeCompare(String(b.date || '')) || String(a.id).localeCompare(String(b.id)));
+    let changed = false;
+    arr.forEach((l, i) => { if (l.no !== i + 1) { l.no = i + 1; changed = true; } });
+    if (changed) save();
   }
 
   /* ---------- 이미지 묶음 ---------- */

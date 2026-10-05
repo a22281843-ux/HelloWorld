@@ -2198,7 +2198,7 @@
      - '비교' 조건은 넣고/빼는 모든 조합을 돌려 성과를 나란히 보여 줌
      ========================================================= */
   const CB_KEY = 'tradedesk.cb';
-  const CB_TFS = [['M5', 5], ['M15', 15], ['M30', 30], ['H1', 60], ['H4', 240]];
+  const CB_TFS = [['M1', 1], ['M2', 2], ['M5', 5], ['M10', 10], ['M15', 15], ['M30', 30], ['H1', 60], ['H4', 240]];
   const CB_MAX_OPT = 6;
   const SRC_OPTS = [['close', '종가'], ['open', '시가'], ['high', '고가'], ['low', '저가']];
   const BAND_OPTS = [['any', '①② 중 하나라도'], ['both', '①② 둘 다'], ['b1', '①만'], ['b2', '②만']];
@@ -2241,7 +2241,7 @@
       text: p => p.mode === 'against' ? '매수: 역배열(20<60<120) 중 / 매도: 정배열 중' : '매수: 정배열(20>60>120) / 매도: 역배열(20<60<120)' },
     div: { name: '이격도 다이버전스', params: [{ k: 'mode', label: '종류', opts: [['any', '일반·히든 모두'], ['regular', '일반'], ['hidden', '히든']], def: 'any' }, { k: 'side', label: '방향', opts: [['same', '진입 방향 신호'], ['opp', '반대 방향 신호']], def: 'same' }, { k: 'within', label: '두 번째 고·저점 후 몇 봉 안', def: 5 }],
       text: p => `${p.side === 'opp' ? '진입 반대 방향' : '매수: 강세 / 매도: 약세'} ${p.mode === 'regular' ? '일반' : p.mode === 'hidden' ? '히든' : '일반·히든'} 다이버전스 (이격도 = 종가 ÷ 20이평, 양옆 3봉 고·저점, 최근 ${p.within}봉 안)` },
-    dbl: { name: '쌍바닥·쌍봉', params: [{ k: 'mode', label: '진입 자리', opts: [['second', '두 번째 바닥(봉우리) 확인 직후'], ['neck', '넥라인 돌파 후 되돌림']], def: 'neck' }, { k: 'tol', label: '두 바닥 차이 ≤ pt', def: 30 }, { k: 'within', label: '몇 봉 안', def: 5 }],
+    dbl: { name: '쌍바닥·쌍봉', params: [{ k: 'mode', label: '진입 자리', opts: [['second', '두 번째 바닥(봉우리) 확인 직후'], ['neck', '넥라인 돌파 후 되돌림']], def: 'neck' }, { k: 'hl', label: '두 번째 바닥', opts: [['any', '상관없음'], ['higher', '첫 바닥보다 높거나 같음']], def: 'any' }, { k: 'tol', label: '두 바닥 차이 ≤ pt', def: 30 }, { k: 'within', label: '몇 봉 안', def: 5 }],
       text: p => `매수: 쌍바닥 / 매도: 쌍봉 (양옆 3봉 고·저점 2개, 5~60봉 간격, 차이 ${p.tol}pt 이내) · ${p.mode === 'second' ? `두 번째 바닥 확인 후 ${p.within}봉 안` : '넥라인을 넘은 뒤 넥라인까지 되돌려 닿고 넥라인 위에서 마감 (매도는 반대)'}` },
     rsi3: { name: 'RSI 과매도·과매수 3회', params: [{ k: 'n', label: '몇 번째부터', def: 3 }, { k: 'within', label: '마지막 진입 후 몇 봉 안', def: 5 }, { k: 'side', label: '방향', opts: [['same', '진입 방향 신호'], ['opp', '반대 방향 신호']], def: 'same' }],
       text: p => `${p.side === 'opp' ? '반대: ' : ''}매수: RSI(14) 30 아래 ${p.n}번째 (달러 주머니) / 매도: 70 위 ${p.n}번째 (빨간 봉우리), 반대쪽에 가면 다시 셈, 최근 ${p.within}봉 안` },
@@ -2290,7 +2290,7 @@
   function cbNewCond(type, o = {}) {
     const p = { w: 0 };
     for (const q of CB_CONDS[type].params) p[q.k] = q.def;
-    return { id: o.id || uid(), type, role: ROLE_KO[o.role] ? o.role : 'req', cat: o.cat != null && (o.cat === '' || CB_CATS.includes(o.cat)) ? o.cat : (CB_CAT_DEF[type] ?? ''), p: { ...p, ...(o.p || {}) } };
+    return { id: o.id || uid(), type, role: ROLE_KO[o.role] ? o.role : 'req', cat: o.cat != null && (o.cat === '' || CB_CATS.includes(o.cat)) ? o.cat : (CB_CAT_DEF[type] ?? ''), tf: CB_TFS.some(x => x[0] === o.tf) ? o.tf : '', p: { ...p, ...(o.p || {}) } };
   }
   const cb = (() => {
     let d = {}; try { d = JSON.parse(localStorage.getItem(CB_KEY)) || {}; } catch (e) {}
@@ -2444,8 +2444,8 @@
     }
     return { m, u, l };
   }
-  function cbContext(D, cfg, meta) {
-    const tfMin = (CB_TFS.find(x => x[0] === cfg.tf) || CB_TFS[3])[1];
+  function cbContext(D, cfg, meta, cache = {}) {
+    const tfMin = (CB_TFS.find(x => x[0] === cfg.tf) || CB_TFS.find(x => x[0] === 'H1'))[1];
     const B = cbBars(D, tfMin), N = B.t.length;
     const src = s => B[{ close: 'c', open: 'o', high: 'h', low: 'l' }[s] || 'c'];
     const pi = (v, d) => Math.max(1, Math.round(num(v) ?? d));
@@ -2459,7 +2459,9 @@
       kstH[i] = new Date(kstOf(B.t[i], meta)).getUTCHours();
     }
     const X_MA = sma(src(ma.src), pi(ma.n, 20));
-    return { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
+    const X_SELF = { B, N, pt: num(meta.point) || 1, meta, dayHi, dayLo, kstH,
+      tf: cfg.tf, tfMs: tfMin * 60e3,
+      ctxFor: tf => { if (!cache[cfg.tf]) cache[cfg.tf] = X_SELF; return cache[tf] || (cache[tf] = cbContext(D, { ...cfg, tf }, meta, cache)); },
       b1: bands(src(b1.src), pi(b1.n, 20), num(b1.k) ?? 2), b2: bands(src(b2.src), pi(b2.n, 4), num(b2.k) ?? 4), ma: X_MA,
       smaN: (() => { const c = {}; return n => c[n] || (c[n] = sma(B.c, n)); })(),
       disp: once(() => { const m = sma(B.c, 20); return B.c.map((v, i) => (v / m[i] - 1) * 100); }),
@@ -2467,6 +2469,7 @@
       rsiCnt: once(() => rsiCounts(rsiArr(B.c, 14), 30, 70)),
       zones: once(() => ({ 1: zoneArr(B, 1), '-1': zoneArr(B, -1) })),
       pulls: once(() => ({ 1: pullArr(B, X_MA, 1), '-1': pullArr(B, X_MA, -1) })) };
+    return X_SELF;
   }
   const once = f => { let v; return () => v || (v = f()); };
   // 양옆 k봉보다 낮은(높은) 봉 = 저점(고점). k봉 뒤에야 확정되므로 확정 시점 기준으로 위치를 기록
@@ -2595,6 +2598,7 @@
         if (pos < 1) return false;
         const j2 = list[pos], j1 = list[pos - 1], gap = j2 - j1, pr = buy ? B.l : B.h, tol = (num(p.tol) ?? 30) * X.pt;
         if (gap < 5 || gap > 60 || Math.abs(pr[j2] - pr[j1]) > tol) return false;
+        if (p.hl === 'higher' && (buy ? pr[j2] < pr[j1] : pr[j2] > pr[j1])) return false;
         if (p.mode === 'second') return i - j2 <= 3 + Math.max(0, Math.round(num(p.within) ?? 5));
         let neck = buy ? -Infinity : Infinity;
         for (let j = j1; j <= j2; j++) neck = buy ? Math.max(neck, B.h[j]) : Math.min(neck, B.l[j]);
@@ -2629,6 +2633,16 @@
   }
   // 조건 하나의 봉별 결과 (최근 w봉 이내 한 번이라도 맞으면 참)
   function condArray(X, c, s) {
+    if (c.tf && c.tf !== X.tf) {   // 다른 시간봉 조건: 그 시간봉에서 계산 → 진입봉 마감 시점에 이미 마감된 그 시간봉 값을 사용
+      const Y = X.ctxFor(c.tf), a = condArray(Y, { ...c, tf: '' }, s), out = new Uint8Array(X.N);
+      let k = -1;
+      for (let i = 0; i < X.N; i++) {
+        const end = X.B.t[i] + X.tfMs;
+        while (k + 1 < Y.N && Y.B.t[k + 1] + Y.tfMs <= end) k++;
+        out[i] = k >= 0 ? a[k] : 0;
+      }
+      return out;
+    }
     const a = new Uint8Array(X.N);
     for (let i = 0; i < X.N; i++) a[i] = condAt(X, c, i, s) ? 1 : 0;
     const w = Math.max(0, Math.round(num(c.p.w) || 0));
@@ -2805,7 +2819,7 @@
   function cbSummary(cfg) {
     const dirKo = { buy: '매수만', sell: '매도만', both: '매수·매도' }[cfg.dir];
     const on = cfg.conds.filter(c => c.role !== 'off');
-    return `${dirKo} · ${cfg.tf}` + (on.length ? '\n' + on.map(c => `- [${ROLE_KO[c.role]}]${c.cat ? `(${c.cat})` : ''} ${CB_CONDS[c.type].name}: ${cbCondText(c)}`).join('\n') + (on.some(c => c.role === 'score') ? `\n- 근거 최소 ${cfg.minScore}개` : '') : '\n(조건 없음)');
+    return `${dirKo} · ${cfg.tf}` + (on.length ? '\n' + on.map(c => `- [${ROLE_KO[c.role]}]${c.cat ? `(${c.cat})` : ''}${c.tf ? `[${c.tf}]` : ''} ${CB_CONDS[c.type].name}: ${cbCondText(c)}`).join('\n') + (on.some(c => c.role === 'score') ? `\n- 근거 최소 ${cfg.minScore}개` : '') : '\n(조건 없음)');
   }
 
   function renderCB() {
@@ -2817,8 +2831,8 @@
       const def = CB_CONDS[c.type], lt = c.role === 'opt' ? String.fromCharCode(65 + optIdx++) : '';
       return `<div class="cb-cond ${c.role}">
         <select data-cb="role" data-i="${i}" aria-label="역할">${cbOpts(Object.entries(ROLE_KO), c.role)}</select>
-        <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${c.cat ? `<span class="tag" style="margin-right:6px">${c.cat}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
-          <div class="cb-params"><label>근거${`<select data-cb="cat" data-i="${i}">${cbOpts([...CB_CATS.map(k => [k, `${k} · ${CB_CAT_NAME[k]}`]), ['', '없음 (세지 않음)']], c.cat)}</select>`}</label>${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
+        <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${c.cat ? `<span class="tag" style="margin-right:6px">${c.cat}</span>` : ''}${c.tf ? `<span class="tag" style="margin-right:6px">${c.tf}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
+          <div class="cb-params"><label>시간봉${`<select data-cb="ctf" data-i="${i}">${cbOpts([['', '진입봉'], ...CB_TFS.map(x => [x[0], x[0]])], c.tf || '')}</select>`}</label><label>근거${`<select data-cb="cat" data-i="${i}">${cbOpts([...CB_CATS.map(k => [k, `${k} · ${CB_CAT_NAME[k]}`]), ['', '없음 (세지 않음)']], c.cat)}</select>`}</label>${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
             <label>언제까지 인정${`<select data-cb="p" data-k="w" data-i="${i}">${cbOpts([[0, '이번 봉에서만'], [1, '1봉 전까지'], [2, '2봉 전까지'], [3, '3봉 전까지'], [5, '5봉 전까지']], Math.round(num(c.p.w) || 0))}</select>`}</label></div></div>
         <button class="btn sm danger" data-action="cb-del" data-i="${i}" aria-label="조건 삭제">×</button>
       </div>`;
@@ -3084,6 +3098,7 @@
     switch (t.dataset.cb) {
       case 'role': cfg.conds[i].role = t.value; break;
       case 'cat': cfg.conds[i].cat = t.value; break;
+      case 'ctf': cfg.conds[i].tf = t.value; break;
       case 'p': cfg.conds[i].p[k] = val; break;
       case 'cfg': cfg[k] = k === 'minScore' ? Math.max(1, Math.round(num(t.value) ?? 3)) : t.value; break;
       case 'ind': cfg.ind[t.dataset.b][k] = val; break;
@@ -3093,7 +3108,7 @@
       case 'mm': cb.mm[k] = t.tagName === 'SELECT' ? t.value : val; break;
       default: return;
     }
-    cbSave(['role', 'cat', 'p', 'cfg', 'ind', 'ex'].includes(t.dataset.cb)); renderCB();
+    cbSave(['role', 'cat', 'ctf', 'p', 'cfg', 'ind', 'ex'].includes(t.dataset.cb)); renderCB();
   }
 
   // 전략 카드에 붙는 조건 요약

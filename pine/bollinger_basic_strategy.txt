@@ -1,0 +1,149 @@
+//@version=6
+strategy("기본 전략", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, commission_type=strategy.commission.percent, commission_value=0.05, pyramiding=0)
+
+// === 1. 기본 밴드 설정 ===
+length1 = input.int(4, title="볼린저 밴드 1 길이", minval=1)
+mult1 = input.float(4.0, title="볼린저 밴드 1 표준편차 배수", minval=0.1)
+src1 = input.source(open, title="볼린저 밴드 1 계산 기준 값")
+
+// === 2. 추가 밴드 설정 ===
+length2 = input.int(20, title="볼린저 밴드 2 길이", minval=1)
+mult2 = input.float(2.0, title="볼린저 밴드 2 표준편차 배수", minval=0.1)
+src2 = input.source(close, title="볼린저 밴드 2 계산 기준 값")
+
+squeeze_ratio = input.float(0.8, title="수축 비율", minval=0.01, maxval=0.99)
+
+// === 백테스트 설정 ===
+grp_bt = "백테스트 설정"
+trade_mode = input.string("롱만", title="매매 방향", options=["롱만", "숏만", "롱+숏"], group=grp_bt)
+buy_signal_type = input.string("7. 기본더블비 매수", title="매수 신호", options=["2. 수축후 하단터치", "3. 골크후 첫 하단터치", "6. 하단원비 터치", "7. 기본더블비 매수"], group=grp_bt)
+sell_signal_type = input.string("8. 기본더블비 매도", title="매도 신호", options=["1. 수축후 상단터치", "4. 데크후 첫 상단터치", "5. 상단원비 터치", "8. 기본더블비 매도"], group=grp_bt)
+exit_on_opposite = input.bool(true, title="반대 신호로 청산", group=grp_bt)
+tp_pct = input.float(0.0, title="익절 % (0 = 사용 안 함)", minval=0.0, step=0.1, group=grp_bt)
+sl_pct = input.float(0.0, title="손절 % (0 = 사용 안 함)", minval=0.0, step=0.1, group=grp_bt)
+start_time = input.time(timestamp("01 Jan 2020 00:00 +0000"), title="시작일", group=grp_bt)
+end_time = input.time(timestamp("31 Dec 2099 00:00 +0000"), title="종료일", group=grp_bt)
+
+// === 3. 밴드 계산 ===
+// 밴드 1
+ma1 = ta.sma(src1, length1)
+stdev1 = ta.stdev(src1, length1)
+upper_band1 = ma1 + stdev1 * mult1
+lower_band1 = ma1 - stdev1 * mult1
+
+// 밴드 2
+ma2 = ta.sma(src2, length2)
+stdev2 = ta.stdev(src2, length2)
+upper_band2 = ma2 + stdev2 * mult2
+lower_band2 = ma2 - stdev2 * mult2
+
+bandwidth = upper_band1 - lower_band1
+prev_bandwidth = bandwidth[1]
+
+sma20 = ta.sma(close, 20)
+sma120 = ta.sma(close, 120)
+
+// === 4. 터치 조건 ===
+is_touch_upper = high >= upper_band1 and high[1] < upper_band1[1]
+is_touch_lower = low <= lower_band1 and low[1] > lower_band1[1]
+
+is_squeezed = bandwidth < prev_bandwidth * squeeze_ratio
+
+gold_cross = ta.crossover(sma20, sma120)
+dead_cross = ta.crossunder(sma20, sma120)
+
+var bool wait_gc = false
+var bool wait_dc = false
+
+if gold_cross
+    wait_gc := true
+    wait_dc := false
+
+if dead_cross
+    wait_dc := true
+    wait_gc := false
+
+is_sma20_up = sma20 > sma20[1]
+is_sma20_down = sma20 < sma20[1]
+
+alert_sq_upper = is_squeezed and is_touch_upper
+alert_sq_lower = is_squeezed and is_touch_lower
+alert_gc_first = wait_gc and is_touch_lower
+alert_dc_first = wait_dc and is_touch_upper
+alert_simple_upper = is_touch_upper
+alert_simple_lower = is_touch_lower
+alert_double_buy = is_sma20_up and is_touch_lower
+alert_double_sell = is_sma20_down and is_touch_upper
+
+if alert_gc_first
+    wait_gc := false
+
+if alert_dc_first
+    wait_dc := false
+
+// === 5. 매매 ===
+buy_signal = switch buy_signal_type
+    "2. 수축후 하단터치" => alert_sq_lower
+    "3. 골크후 첫 하단터치" => alert_gc_first
+    "6. 하단원비 터치" => alert_simple_lower
+    => alert_double_buy
+
+sell_signal = switch sell_signal_type
+    "1. 수축후 상단터치" => alert_sq_upper
+    "4. 데크후 첫 상단터치" => alert_dc_first
+    "5. 상단원비 터치" => alert_simple_upper
+    => alert_double_sell
+
+// 같은 봉에서 매수·매도 신호가 동시에 나오면 무시
+go_buy = buy_signal and not sell_signal
+go_sell = sell_signal and not buy_signal
+
+allow_long = trade_mode != "숏만"
+allow_short = trade_mode != "롱만"
+in_range = time >= start_time and time <= end_time
+use_tp_sl = tp_pct > 0 or sl_pct > 0
+
+// 익절·손절 거리(틱)는 진입 신호가 나온 봉의 종가 기준으로 고정
+var float tp_ticks = na
+var float sl_ticks = na
+
+if in_range and go_buy
+    if allow_long
+        if strategy.position_size <= 0
+            tp_ticks := tp_pct > 0 ? math.round(close * tp_pct / 100 / syminfo.mintick) : na
+            sl_ticks := sl_pct > 0 ? math.round(close * sl_pct / 100 / syminfo.mintick) : na
+        strategy.entry("롱", strategy.long)
+    else if exit_on_opposite
+        strategy.close("숏", comment="매수 신호 청산")
+
+if in_range and go_sell
+    if allow_short
+        if strategy.position_size >= 0
+            tp_ticks := tp_pct > 0 ? math.round(close * tp_pct / 100 / syminfo.mintick) : na
+            sl_ticks := sl_pct > 0 ? math.round(close * sl_pct / 100 / syminfo.mintick) : na
+        strategy.entry("숏", strategy.short)
+    else if exit_on_opposite
+        strategy.close("롱", comment="매도 신호 청산")
+
+if use_tp_sl
+    strategy.exit("롱 익절/손절", from_entry="롱", profit=tp_ticks, loss=sl_ticks)
+    strategy.exit("숏 익절/손절", from_entry="숏", profit=tp_ticks, loss=sl_ticks)
+
+// 테스트 기간이 끝나면 모든 포지션 정리
+if time > end_time
+    strategy.close_all(comment="기간 종료")
+
+// === 6. 시각화 ===
+plot(sma20, title="20 SMA")
+plot(sma120, title="120 SMA", linewidth=2)
+
+plot(upper_band1, title="상단 밴드 1")
+plot(lower_band1, title="하단 밴드 1")
+
+plot(upper_band2, title="상단 밴드 2", linewidth=1)
+plot(lower_band2, title="하단 밴드 2", linewidth=1)
+
+plotshape(alert_sq_upper, style=shape.triangledown, location=location.abovebar, title="수축 상단")
+plotshape(alert_sq_lower, style=shape.triangleup, location=location.belowbar, title="수축 하단")
+plotshape(alert_gc_first, style=shape.diamond, location=location.belowbar, title="골크 첫터치")
+plotshape(alert_dc_first, style=shape.diamond, location=location.abovebar, title="데크 첫터치")

@@ -661,7 +661,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.9.0';
+  const APP_VERSION = 'v1.10.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -3002,6 +3002,54 @@
   // 전략별 실전 성과 (일지에서 셋업 이름이 같은 매매)
   function strategyReal(st) { return realStats(realTrades(st.name, null, null, null)); }
 
+  /* ---------- 새 대화로 이어가기: Claude에게 붙여넣을 요청문 ---------- */
+  const isDict = st => /정의\s*사전/.test(st.name || '');
+  function handoffText() {
+    const sts = S.strategies.filter(x => !x.example);
+    const dict = sts.filter(isDict), rest = sts.filter(x => !isDict(x));
+    const card = st => [`■ ${st.name}`, st.summary && `요약: ${st.summary}`, st.symbols && `종목·시간봉: ${st.symbols}`,
+      st.entry.length && `진입 규칙:\n${st.entry.map(x => '- ' + x).join('\n')}`, st.exit && `손절·청산:\n${st.exit}`,
+      st.avoid && `진입 금지:\n${lines(st.avoid).map(x => '- ' + x).join('\n')}`, st.memo && `메모: ${st.memo}`,
+      st.btCfg && `백테스트 조건 코드:\n${JSON.stringify({ app: 'tradedesk-conds', version: 1, name: st.name, cfg: st.btCfg })}`].filter(Boolean).join('\n');
+    const lessons = S.lessons.filter(l => !l.example).sort((a, b) => (a.course || '').localeCompare(b.course || '') || (num(a.no) || 0) - (num(b.no) || 0));
+    return `[이어서 진행 요청]
+나는 트레이딩 강의를 정리해서 매매법을 백테스트하고, 매매 성공 확률을 높이는 작업을 이어서 하고 있어. 아래 내용을 먼저 읽고 같은 방식으로 이어서 해 줘.
+
+[작업 환경]
+- 저장소: a22281843-ux/helloworld · 브랜치: claude/stoic-ptolemy-qoxzhi · 앱 파일: trading.html (Trade Desk, ${APP_VERSION})
+- 수정한 앱은 커밋·푸시하고, 내 claude.ai 아티팩트 "Trade Desk"(기존 링크)도 같은 내용으로 업데이트해 줘. 아티팩트 판은 CAN_DOWNLOAD=false, Pretendard 글꼴 대신 Google Fonts Noto Sans KR을 써.
+
+[진행 방식]
+1. 내가 강의 자막(또는 녹음 텍스트)과 화면 캡처를 여러 번 나눠 보내. 마지막에 "끝!"이라고 하면 그때 한 번에 정리해. 그 전에는 사진마다 짧게 확인만 해 줘.
+2. 장면마다 더캔이지추격깨(더블비·캔들·이평선·지지저항·추세선·이격도·깨짐) 중 어떤 근거가 겹쳤는지 표시해 줘. 근거가 3개 이상일 때 진입하는 게 원칙이야.
+3. 박스 이탈인지, 쌍바닥·쌍봉인지, 변곡인지, 돌파인지 같은 정의를 아래 [정의 사전]과 비교해서 확정하거나 수정해 줘. 달라진 점은 꼭 표로 알려 줘.
+4. 결과물: ① 강의 필기(노트 탭 'AI 정리' 양식: ### 제목 / 핵심 요약 / 핵심 포인트 / 매매 규칙 / 용어 / 질문할 것) ② 매매법별 전략 카드(### 전략 이름 / 핵심 요약 / 사용 종목·시간봉 / 진입 규칙 / 손절·청산 / 진입 금지 조건) ③ 백테스트 조건 코드({"app":"tradedesk-conds",...}) ④ 정의 사전 카드 업데이트본.
+5. 백테스트에 필요한 조건이 앱에 없으면 trading.html의 조건 백테스트(CB_CONDS)에 추가하고 테스트해 줘. 조건마다 근거 카테고리(더·캔·이·지·추·격·깨)를 붙이고, '근거 최소 N개(필수 포함)'로 진입을 판단해.
+6. 강의 내용은 개인 교육 자료라서 공개 저장소에는 올리지 마. 정의와 전략은 내 앱(노트 탭)에만 보관해.
+
+[정의 사전]
+${dict.length ? dict.map(card).join('\n\n') : '(노트 탭에 "정의 사전" 전략 카드가 아직 없음)'}
+
+[매매 전 체크리스트 (설정 탭)]
+${S.settings.checklist.map(x => '- ' + x).join('\n')}
+
+[전략 카드 ${rest.length}개]
+${rest.length ? rest.map(card).join('\n\n') : '(없음)'}
+
+[지금까지 정리한 강의 필기 ${lessons.length}개]
+${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제목 없음)'}`).join('\n') || '(없음)'}
+`;
+  }
+  function openHandoff() {
+    const text = handoffText();
+    dialog('새 대화로 이어가기', `<p>새 Claude 대화를 열고 아래 글을 <b>통째로 붙여넣으면</b> 지금까지의 진행 방식·정의 사전·전략·백테스트 코드를 그대로 이어서 작업해요. 전략 카드를 고칠 때마다 최신 내용으로 다시 만들어지니, 이어갈 때마다 새로 복사하세요.</p>
+      <textarea id="hoText" readonly style="min-height:240px">${esc(text)}</textarea>
+      <p style="font-size:.78rem;margin-top:8px">${(text.length / 1000).toFixed(1)}천 자 · 전략 카드 ${S.strategies.filter(x => !x.example).length}개 포함</p>`, [
+      { label: '닫기', value: null },
+      { label: '복사', cls: 'primary', onClick: () => copyText(text, $('#hoText')) },
+    ]);
+  }
+
   /* ---------- 목록 ---------- */
   function renderStudy() {
     if (study.open) { study.mode === 'strategy' ? renderStrategy() : renderLesson(); return; }
@@ -3010,6 +3058,7 @@
       <div class="btn-row">${study.mode === 'strategy'
         ? `<button class="btn primary sm" data-action="st-new">+ 새 전략</button>`
         : `<button class="btn primary sm" data-action="ls-new">+ 새 필기</button>`}
+        <button class="btn sm" data-action="handoff">🧭 새 대화로 이어가기</button>
         ${!S.lessons.some(x => x.example) && !S.strategies.some(x => x.example) ? '<button class="btn sm" data-action="study-example">예시 넣기</button>' : '<button class="btn sm" data-action="study-example-del">예시 지우기</button>'}
       </div></div>`;
     $('#studyRoot').innerHTML = head + (study.mode === 'strategy' ? strategyListHTML() : lessonListHTML());
@@ -3478,6 +3527,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
       case 'export-csv': exportCSV(); break;
       case 'import-open': openImport(); break;
       case 'cash-new': openCashForm(null); break;
+      case 'handoff': openHandoff(); break;
       case 'study-mode': study.mode = el.dataset.v; study.open = null; renderStudy(); break;
       case 'study-back': study.open = null; study.draft = []; renderStudy(); window.scrollTo(0, 0); break;
       case 'study-example': addExamples(); renderStudy(); toast('예시를 넣었습니다. 전략 노트와 강의 필기를 둘러보세요'); break;

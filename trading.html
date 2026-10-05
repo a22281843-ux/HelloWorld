@@ -672,7 +672,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.13.0';
+  const APP_VERSION = 'v1.14.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2206,8 +2206,9 @@
   const CB_TFS = [['M1', 1], ['M2', 2], ['M5', 5], ['M10', 10], ['M15', 15], ['M30', 30], ['H1', 60], ['H4', 240]];
   const CB_MAX_OPT = 6;
   const SRC_OPTS = [['close', '종가'], ['open', '시가'], ['high', '고가'], ['low', '저가']];
-  const BAND_OPTS = [['any', '①② 중 하나라도'], ['both', '①② 둘 다'], ['b1', '①만'], ['b2', '②만']];
-  const BAND_KO = Object.fromEntries(BAND_OPTS);
+  const BAND_OPTS = [['b2', '4/4'], ['b1', '20/2'], ['both', '4/4, 20/2 둘 다'], ['ma', '20 이평선']];
+  const BAND_LEGACY = ['any', '4/4·20/2 중 하나라도 (예전 설정)'];   // 예전 카드에만 보이는 선택지
+  const BAND_KO = Object.fromEntries([...BAND_OPTS, BAND_LEGACY]);
   const ROLE_KO = { req: '필수', score: '점수', opt: '비교', not: '제외', off: '끔' };
   // 조건은 매수 기준으로 정의, 매도는 위아래를 뒤집어 적용
   const CB_CONDS = {
@@ -2216,10 +2217,9 @@
         { k: 'look', label: '몇 봉 전과 비교', def: 3 }],
       text: p => p.mode === 'against' ? `매수: 이평이 내려가는 중 / 매도: 올라가는 중 (${p.look}봉 전과 비교)` : `매수: 이평 상승 / 매도: 이평 하락 (${p.look}봉 전과 비교)` },
     touch: { name: '밴드 찌름', params: [
-        { k: 'band', label: '밴드', opts: BAND_OPTS, def: 'any' },
-        { k: 'side', label: '방향', opts: [['rev', '매수=하단 · 매도=상단'], ['brk', '매수=상단 · 매도=하단 (돌파)']], def: 'rev' },
-        { k: 'fresh', label: '찌름 방식', opts: [['any', '닿으면 인정'], ['new', '새로 찌름 (직전 봉은 안 닿음)']], def: 'any' }],
-      text: p => `${p.side === 'brk' ? '매수: 상단 / 매도: 하단' : '매수: 하단 / 매도: 상단'}을 ${BAND_KO[p.band]} ${p.fresh === 'new' ? '새로 찌름 (직전 봉은 안 닿음)' : '찌름'}` },
+        { k: 'band', label: '밴드', opts: BAND_OPTS, def: 'b2' },
+        { k: 'side', label: '방향', opts: [['rev', '매수=하단 · 매도=상단'], ['brk', '매수=상단 · 매도=하단']], def: 'rev' }],
+      text: p => p.band === 'ma' ? `${p.side === 'brk' ? '매수: 아래에서 / 매도: 위에서' : '매수: 위에서 / 매도: 아래에서'} 20 이평선에 닿음` : `${p.side === 'brk' ? '매수: 상단 / 매도: 하단' : '매수: 하단 / 매도: 상단'}을 ${BAND_KO[p.band]} 밴드에서 닿음` },
     inside: { name: '밴드 안 마감', params: [{ k: 'band', label: '밴드', opts: BAND_OPTS, def: 'both' }],
       text: p => `매수: 하단선 위 / 매도: 상단선 아래에서 마감 (${BAND_KO[p.band]})` },
     candle: { name: '캔들 색', params: [], text: () => '매수: 양봉 / 매도: 음봉' },
@@ -2228,8 +2228,8 @@
     longwick: { name: '긴 꼬리', params: [{ k: 'pct', label: '꼬리 ≥ 봉 길이 %', def: 40 }],
       text: p => `매수: 아랫꼬리 / 매도: 윗꼬리가 봉 길이의 ${p.pct}% 이상` },
     hold: { name: '저점(고점) 지킴', params: [], text: () => '매수: 저가가 직전 봉 저가 이상 / 매도: 고가가 직전 봉 고가 이하' },
-    turn: { name: '밴드 기울기 멈춤', params: [{ k: 'line', label: '선', opts: [['b1o', '① 바깥선'], ['mid', '① 중심선'], ['b2o', '② 바깥선']], def: 'b1o' }],
-      text: p => `매수: ${p.line === 'mid' ? '① 중심선' : p.line === 'b2o' ? '② 하단선' : '① 하단선'}이 더 내려가지 않음 / 매도: ${p.line === 'mid' ? '중심선' : '상단선'}이 더 올라가지 않음` },
+    turn: { name: '밴드 기울기 멈춤', params: [{ k: 'line', label: '선', opts: [['b1o', '20/2 바깥선'], ['mid', '20/2 중심선'], ['b2o', '4/4 바깥선']], def: 'b1o' }],
+      text: p => `매수: ${p.line === 'mid' ? '20/2 중심선' : p.line === 'b2o' ? '4/4 하단선' : '20/2 하단선'}이 더 내려가지 않음 / 매도: ${p.line === 'mid' ? '중심선' : '상단선'}이 더 올라가지 않음` },
     daybrk: { name: '당일 고점·저점 돌파', params: [{ k: 'side', label: '방향', opts: [['same', '진입 방향으로 돌파'], ['opp', '반대 방향으로 이탈']], def: 'same' }],
       text: p => p.side === 'opp' ? '매수: 당일 저점 아래로 이탈 / 매도: 당일 고점 위로 이탈 (MT5 일봉 기준)' : '매수: 당일 고점 위로 / 매도: 당일 저점 아래로 (MT5 일봉 기준)' },
     nbrk: { name: '최근 N봉 고점·저점 돌파', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'side', label: '방향', opts: [['same', '진입 방향으로 돌파'], ['opp', '반대 방향으로 이탈']], def: 'same' }],
@@ -2239,12 +2239,12 @@
       text: p => p.mode === 'against' ? '매수: 종가가 이평 아래 / 매도: 종가가 이평 위' : '매수: 종가가 이평 위 / 매도: 종가가 이평 아래 (추세 쪽에서 눌림)' },
     move: { name: '직전 큰 움직임', params: [{ k: 'n', label: 'N봉', def: 20 }, { k: 'pts', label: 'pt 이상', def: 100 }],
       text: p => `직전 ${p.n}봉 동안 ${p.pts}pt 이상 반대로 움직임 (매수: 하락 뒤 / 매도: 상승 뒤)` },
-    squeeze: { name: '밴드 수축', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b2' }, { k: 'ratio', label: '직전 봉 폭의 몇 배 미만', def: 0.8 }],
-      text: p => `${p.band === 'b1' ? '①' : '②'} 밴드 폭이 직전 봉 폭의 ${p.ratio}배 미만으로 줄어듦 (매수·매도 공통)` },
-    crossfirst: { name: '골크·데크 후 첫 찌름', params: [{ k: 'fast', label: '짧은 이평', def: 20 }, { k: 'slow', label: '긴 이평', def: 120 }, { k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b2' }],
-      text: p => `매수: ${p.fast}·${p.slow} 이평(종가) 골든크로스 뒤 ${p.band === 'b1' ? '①' : '②'} 하단을 처음 새로 찌름 / 매도: 데드크로스 뒤 상단을 처음 새로 찌름 (반대 크로스가 나오면 취소)` },
-    expand: { name: '밴드 확장', params: [{ k: 'band', label: '밴드', opts: [['b1', '①'], ['b2', '②']], def: 'b1' }, { k: 'look', label: '몇 봉 전보다 넓음', def: 1 }],
-      text: p => `${p.band === 'b2' ? '②' : '①'} 밴드 폭이 ${p.look}봉 전보다 넓어짐 (매수·매도 공통)` },
+    squeeze: { name: '밴드 수축', params: [{ k: 'band', label: '밴드', opts: [['b2', '4/4'], ['b1', '20/2']], def: 'b2' }, { k: 'ratio', label: '직전 봉 폭의 몇 배 미만', def: 0.8 }],
+      text: p => `${p.band === 'b1' ? '20/2' : '4/4'} 밴드 폭이 직전 봉 폭의 ${p.ratio}배 미만으로 줄어듦 (매수·매도 공통)` },
+    crossfirst: { name: '골크·데크 후 첫 찌름', params: [{ k: 'fast', label: '짧은 이평', def: 20 }, { k: 'slow', label: '긴 이평', def: 120 }, { k: 'line', label: '밴드', opts: [['lower', '4/4 하단'], ['upper', '4/4 상단']], def: 'lower' }],
+      text: p => `매수: ${p.fast}·${p.slow} 이평(종가) 골든크로스 뒤 4/4 ${p.line === 'upper' ? '상단' : '하단'}에 처음 닿음 / 매도: 데드크로스 뒤 4/4 ${p.line === 'upper' ? '하단' : '상단'}에 처음 닿음 (반대 크로스가 나오면 취소)` },
+    expand: { name: '밴드 확장', params: [{ k: 'band', label: '밴드', opts: [['b2', '4/4'], ['b1', '20/2']], def: 'b1' }, { k: 'look', label: '몇 봉 전보다 넓음', def: 1 }],
+      text: p => `${p.band === 'b2' ? '4/4' : '20/2'} 밴드 폭이 ${p.look}봉 전보다 넓어짐 (매수·매도 공통)` },
     strong: { name: '강한 캔들 (꼬리 없는 장대)', params: [{ k: 'body', label: '몸통 ≥ 봉 길이 %', def: 60 }, { k: 'tail', label: '진행 방향 꼬리 ≤ %', def: 15 }],
       text: p => `매수: 몸통이 봉의 ${p.body}% 이상인 양봉, 윗꼬리 ${p.tail}% 이하 / 매도: 같은 조건의 음봉, 아랫꼬리 ${p.tail}% 이하` },
     stack: { name: '이평 배열 (20·60·120)', params: [{ k: 'mode', label: '기준', opts: [['with', '진입 방향과 같음'], ['against', '진입 방향과 반대']], def: 'with' }],
@@ -2479,7 +2479,7 @@
       rsiCnt: once(() => rsiCounts(rsiArr(B.c, 14), 30, 70)),
       zones: once(() => ({ 1: zoneArr(B, 1), '-1': zoneArr(B, -1) })),
       pulls: once(() => ({ 1: pullArr(B, X_MA, 1), '-1': pullArr(B, X_MA, -1) })),
-      crossFirst: (() => { const c = {}; return (p, s) => { const f = Math.max(1, Math.round(num(p.fast) ?? 20)), sl = Math.max(1, Math.round(num(p.slow) ?? 120)), k = `${f}|${sl}|${p.band}|${s}`; return c[k] || (c[k] = crossFirstArr(X_SELF, f, sl, p.band, s)); }; })() };
+      crossFirst: (() => { const c = {}; return (p, s) => { const f = Math.max(1, Math.round(num(p.fast) ?? 20)), sl = Math.max(1, Math.round(num(p.slow) ?? 120)), k = `${f}|${sl}|${p.line}|${s}`; return c[k] || (c[k] = crossFirstArr(X_SELF, f, sl, p.line, s)); }; })() };
     return X_SELF;
   }
   const once = f => { let v; return () => v || (v = f()); };
@@ -2544,19 +2544,21 @@
     }
     return out;
   }
-  // 골든크로스(매수)·데드크로스(매도) 뒤 밴드를 처음 새로 찌른 봉. 반대 크로스가 나오면 기다림 취소 (트레이딩뷰 '기본' 지표와 같은 방식)
-  function crossFirstArr(X, fast, slow, band, s) {
-    const { B, N } = X, f = X.smaN(fast), sl = X.smaN(slow), bd = band === 'b1' ? X.b1 : X.b2, out = new Uint8Array(N);
+  // 골든크로스(매수)·데드크로스(매도) 뒤 4/4 밴드에 처음 닿은 봉. 반대 크로스가 나오면 기다림 취소
+  // line: 'lower' = 매수는 하단·매도는 상단, 'upper' = 매수는 상단·매도는 하단
+  function crossFirstArr(X, fast, slow, line, s) {
+    const { B, N } = X, f = X.smaN(fast), sl = X.smaN(slow), bd = X.b2, out = new Uint8Array(N), hitUp = (line === 'upper') === (s > 0);
     let wait = false;
     for (let i = 1; i < N; i++) {
       if (f[i] > sl[i] && f[i - 1] <= sl[i - 1]) wait = s > 0;
       if (f[i] < sl[i] && f[i - 1] >= sl[i - 1]) wait = s < 0;
-      const touch = s > 0 ? B.l[i] <= bd.l[i] && B.l[i - 1] > bd.l[i - 1] : B.h[i] >= bd.u[i] && B.h[i - 1] < bd.u[i - 1];
+      const touch = hitUp ? B.h[i] >= bd.u[i] : B.l[i] <= bd.l[i];
       if (wait && touch) { out[i] = 1; wait = false; }
     }
     return out;
   }
   function bandTest(X, mode, fn) {
+    if (mode === 'ma') return fn({ u: X.ma, l: X.ma, m: X.ma });   // 20 이평선을 밴드처럼 사용 (상단=하단=이평)
     return mode === 'both' ? fn(X.b1) && fn(X.b2) : mode === 'b1' ? fn(X.b1) : mode === 'b2' ? fn(X.b2) : fn(X.b1) || fn(X.b2);
   }
   function condAt(X, c, i, s) {
@@ -2568,8 +2570,8 @@
         return (p.mode === 'against') !== buy ? d > 0 : d < 0;
       }
       case 'touch': {
-        const up = p.side === 'brk' ? buy : !buy, fresh = p.fresh === 'new';
-        return bandTest(X, p.band, b => up ? h >= b.u[i] && (!fresh || (i > 0 && B.h[i - 1] < b.u[i - 1])) : l <= b.l[i] && (!fresh || (i > 0 && B.l[i - 1] > b.l[i - 1])));
+        const up = p.side === 'brk' ? buy : !buy;
+        return bandTest(X, p.band, b => up ? h >= b.u[i] : l <= b.l[i]);
       }
       case 'squeeze': { const b = p.band === 'b1' ? X.b1 : X.b2; return i > 0 && (b.u[i] - b.l[i]) < (b.u[i - 1] - b.l[i - 1]) * (num(p.ratio) ?? 0.8); }
       case 'crossfirst': return X.crossFirst(p, s)[i] === 1;
@@ -2882,7 +2884,7 @@
       return `<div class="cb-cond ${c.role}">
         <select data-cb="role" data-i="${i}" aria-label="역할">${cbOpts(Object.entries(ROLE_KO), c.role)}</select>
         <div><div class="cb-name">${lt ? `<span class="lt">${lt}</span>` : ''}${c.cat ? `<span class="tag" style="margin-right:6px">${c.cat}</span>` : ''}${c.tf ? `<span class="tag" style="margin-right:6px">${c.tf}</span>` : ''}${esc(def.name)}</div><div class="cb-txt">${esc(cbCondText(c))}</div>
-          <div class="cb-params"><label>시간봉${`<select data-cb="ctf" data-i="${i}">${cbOpts([['', '진입봉'], ...CB_TFS.map(x => [x[0], x[0]])], c.tf || '')}</select>`}</label><label>근거${`<select data-cb="cat" data-i="${i}">${cbOpts([...CB_CATS.map(k => [k, `${k} · ${CB_CAT_NAME[k]}`]), ['', '없음 (세지 않음)']], c.cat)}</select>`}</label>${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
+          <div class="cb-params"><label>시간봉${`<select data-cb="ctf" data-i="${i}">${cbOpts([['', '진입봉'], ...CB_TFS.map(x => [x[0], x[0]])], c.tf || '')}</select>`}</label><label>근거${`<select data-cb="cat" data-i="${i}">${cbOpts([...CB_CATS.map(k => [k, `${k} · ${CB_CAT_NAME[k]}`]), ['', '없음 (세지 않음)']], c.cat)}</select>`}</label>${def.params.map(q => `<label>${esc(q.label)}${q.opts ? `<select data-cb="p" data-k="${q.k}" data-i="${i}">${cbOpts(q.opts === BAND_OPTS && c.p[q.k] === 'any' ? [...q.opts, BAND_LEGACY] : q.opts, c.p[q.k])}</select>` : cbNum(`data-cb="p" data-k="${q.k}" data-i="${i}"`, c.p[q.k])}</label>`).join('')}
             <label>언제까지 인정${`<select data-cb="p" data-k="w" data-i="${i}">${cbOpts([[0, '이번 봉에서만'], [1, '1봉 전까지'], [2, '2봉 전까지'], [3, '3봉 전까지'], [5, '5봉 전까지']], Math.round(num(c.p.w) || 0))}</select>`}</label></div></div>
         <button class="btn sm danger" data-action="cb-del" data-i="${i}" aria-label="조건 삭제">×</button>
       </div>`;
@@ -2932,11 +2934,11 @@
         <div class="field"><label>방향</label><select data-cb="cfg" data-k="dir">${cbOpts([['both', '매수·매도 모두'], ['buy', '매수만'], ['sell', '매도만']], cfg.dir)}</select></div>
         <div class="field"><label>시간봉</label><select data-cb="cfg" data-k="tf">${cbOpts(CB_TFS.map(x => [x[0], x[0]]), cfg.tf)}</select></div>
       </div>
-      <details class="help" style="margin-top:10px"><summary>지표 설정 (① 볼린저 ${cfg.ind.b1.n}/${cfg.ind.b1.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b1.src)[1]} · ② 볼린저 ${cfg.ind.b2.n}/${cfg.ind.b2.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b2.src)[1]} · 이평 ${cfg.ind.ma.n}/${SRC_OPTS.find(x => x[0] === cfg.ind.ma.src)[1]})</summary>
+      <details class="help" style="margin-top:10px"><summary>지표 설정 (볼린저 ${cfg.ind.b1.n}/${cfg.ind.b1.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b1.src)[1]} · 볼린저 ${cfg.ind.b2.n}/${cfg.ind.b2.k}/${SRC_OPTS.find(x => x[0] === cfg.ind.b2.src)[1]} · 이평 ${cfg.ind.ma.n}/${SRC_OPTS.find(x => x[0] === cfg.ind.ma.src)[1]})</summary>
         <div class="cb-grid" style="margin-top:10px">
-          ${['b1', 'b2'].map((b, n) => `<div class="field"><label>${n ? '②' : '①'} 볼린저 기간</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="n"`, cfg.ind[b].n)}</div>
-            <div class="field"><label>${n ? '②' : '①'} 표준편차</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="k"`, cfg.ind[b].k)}</div>
-            <div class="field"><label>${n ? '②' : '①'} 기준 가격</label><select data-cb="ind" data-b="${b}" data-k="src">${cbOpts(SRC_OPTS, cfg.ind[b].src)}</select></div>`).join('')}
+          ${['b1', 'b2'].map((b, n) => `<div class="field"><label>${n ? '4/4 밴드' : '20/2 밴드'} 볼린저 기간</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="n"`, cfg.ind[b].n)}</div>
+            <div class="field"><label>${n ? '4/4 밴드' : '20/2 밴드'} 표준편차</label>${cbNum(`data-cb="ind" data-b="${b}" data-k="k"`, cfg.ind[b].k)}</div>
+            <div class="field"><label>${n ? '4/4 밴드' : '20/2 밴드'} 기준 가격</label><select data-cb="ind" data-b="${b}" data-k="src">${cbOpts(SRC_OPTS, cfg.ind[b].src)}</select></div>`).join('')}
           <div class="field"><label>이평 기간</label>${cbNum('data-cb="ind" data-b="ma" data-k="n"', cfg.ind.ma.n)}</div>
           <div class="field"><label>이평 기준 가격</label><select data-cb="ind" data-b="ma" data-k="src">${cbOpts(SRC_OPTS, cfg.ind.ma.src)}</select></div>
         </div></details>
@@ -2950,10 +2952,10 @@
       <div class="cb-grid">
         <div class="field"><label>손절</label><select data-cb="ex" data-k="sl">${cbOpts([['fixed', '고정 pt'], ['pct', '진입가의 %'], ['candle', '신호봉 꼬리 끝 + 여유'], ['swing', '직전 저점·고점 + 여유']], ex.sl)}</select></div>
         ${ex.sl === 'fixed' ? `<div class="field"><label>손절 pt</label>${cbNum('data-cb="ex" data-k="slPts"', ex.slPts)}</div>` : ex.sl === 'pct' ? `<div class="field"><label>손절 %</label>${cbNum('data-cb="ex" data-k="slPct"', ex.slPct)}</div>` : `<div class="field"><label>여유 pt</label>${cbNum('data-cb="ex" data-k="slBuf"', ex.slBuf)}</div>`}
-        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['band2', `반대쪽 ② 밴드 닿음 (${cfg.ind.b2.n}/${cfg.ind.b2.k})`], ['ma', `${cfg.ind.ma.n} 이평선 닿음`], ['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['pct', '진입가의 %'], ['none', '없음']], ex.tp)}</select></div>
+        <div class="field"><label>익절</label><select data-cb="ex" data-k="tp">${cbOpts([['band2', '반대쪽 4/4 밴드 닿음'], ['ma', `${cfg.ind.ma.n} 이평선 닿음`], ['r', '손절의 몇 배 (R)'], ['fixed', '고정 pt'], ['pct', '진입가의 %'], ['none', '없음']], ex.tp)}</select></div>
         ${ex.tp === 'r' ? `<div class="field"><label>익절 R</label>${cbNum('data-cb="ex" data-k="tpR"', ex.tpR)}</div>` : ex.tp === 'fixed' ? `<div class="field"><label>익절 pt</label>${cbNum('data-cb="ex" data-k="tpPts"', ex.tpPts)}</div>` : ex.tp === 'pct' ? `<div class="field"><label>익절 %</label>${cbNum('data-cb="ex" data-k="tpPct"', ex.tpPct)}</div>` : ''}
       </div>
-      <div class="sub" style="font-size:.74rem;margin-top:6px">손절·익절에 닿지 않으면 <b>MT5 하루 끝에 항상 청산</b>해요 (당일 청산).${ex.tp === 'band2' || ex.tp === 'ma' ? ` 익절선은 1분봉으로 판정하고, ${ex.tp === 'band2' ? (cfg.ind.b2.src === 'open' ? '② 밴드는 시가로 계산해서 그 봉의 값' : '② 밴드는 직전 마감 봉의 값') : (cfg.ind.ma.src === 'open' ? '이평은 그 봉의 값' : '이평은 직전 마감 봉의 값')}을 써요. 익절선이 진입가보다 불리한 쪽에 있으면 그 봉에선 익절하지 않아요.` : ''}</div>
+      <div class="sub" style="font-size:.74rem;margin-top:6px">손절·익절에 닿지 않으면 <b>MT5 하루 끝에 항상 청산</b>해요 (당일 청산).${ex.tp === 'band2' || ex.tp === 'ma' ? ` 익절선은 1분봉으로 판정하고, ${ex.tp === 'band2' ? (cfg.ind.b2.src === 'open' ? '4/4 밴드는 시가로 계산해서 그 봉의 값' : '4/4 밴드는 직전 마감 봉의 값') : (cfg.ind.ma.src === 'open' ? '이평은 그 봉의 값' : '이평은 직전 마감 봉의 값')}을 써요. 익절선이 진입가보다 불리한 쪽에 있으면 그 봉에선 익절하지 않아요.` : ''}</div>
       <div class="cb-sec">⑥ 랏 · 금액</div>
       <div class="cb-grid">
         <div class="field"><label>랏 방식</label><select data-cb="mm" data-k="mode">${cbOpts([['lots', '고정 랏'], ['risk', '잔고의 위험 % (손절 기준)']], mm.mode)}</select></div>
@@ -2968,7 +2970,7 @@
           <li>조건은 매수 기준으로 적혀 있고, 매도는 위아래를 뒤집어 적용합니다. 예: 밴드 찌름(매수=하단)은 매도일 때 상단 찌름이에요.</li>
           <li><b>최근 N봉 이내</b>: 2로 두면 이번 봉 포함 최근 3개 봉 중 한 번이라도 맞으면 통과합니다. 예: 더블비 찌름 뒤 1~2봉 안에 확인 캔들이 나올 때.</li>
           <li>손절·익절은 1분봉으로 판정하고, 같은 1분봉에서 둘 다 닿으면 손절로 봅니다(보수적). 지표 청산은 봉 마감 가격에 나갑니다.</li>
-          <li>이평·① 중심선 청산은 진입가가 그 선의 반대편에 있을 때만 작동합니다.</li>
+          <li>이평·20/2 중심선 청산은 진입가가 그 선의 반대편에 있을 때만 작동합니다.</li>
           <li>추가 진입(물타기)과 매물대는 아직 지원하지 않아요. 매물대 대신 <b>최근 N봉 고점·저점 돌파</b>를 쓸 수 있어요.</li>
           <li>스프레드는 빼지 않고 계산해요. 실제 매매에서는 그만큼 조금 덜 벌 수 있어요.</li>
         </ul></details>`;
@@ -3125,7 +3127,7 @@
     const R = cb.res, r = R && R.res[cb.pick]; if (!r) return;
     if (!r.trades.length) { toast('거래가 없는 조합은 저장할 수 없어요'); return; }
     const st = cb.stId && findSt(cb.stId), ex = R.cfg.exit;
-    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : ex.tp === 'pct' ? `TP ${ex.tpPct}%` : ex.tp === 'band2' ? 'TP 반대쪽 ②밴드' : ex.tp === 'ma' ? `TP ${R.cfg.ind.ma.n}이평` : 'TP 없음';
+    const tpTxt = ex.tp === 'r' ? `TP ${ex.tpR}R` : ex.tp === 'fixed' ? `TP ${ex.tpPts}pt` : ex.tp === 'pct' ? `TP ${ex.tpPct}%` : ex.tp === 'band2' ? 'TP 반대쪽 4/4밴드' : ex.tp === 'ma' ? `TP ${R.cfg.ind.ma.n}이평` : 'TP 없음';
     const run = { source: 'app', strategy: st ? 'app:' + st.id : '', symbol: R.name, tf: R.cfg.tf,
       sl: Math.round((r.st.avgRisk || 0) * 10) / 10, tp: ex.tp === 'fixed' ? num(ex.tpPts) : null, point: num(R.meta.point), cost: num(ex.cost),
       from: R.from, to: R.to, combo: cbComboLabel(R, r), cfg: { ...R.cfg, conds: [...R.req, ...R.opt.filter((_, b) => r.mask & (1 << b))].map(c => ({ ...c, role: c.role === 'not' ? 'not' : 'req' })).concat((R.score || []).map(c => ({ ...c }))) },

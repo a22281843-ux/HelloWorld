@@ -3098,7 +3098,7 @@
 1. 내가 강의 자막(또는 녹음 텍스트)과 화면 캡처를 여러 번 나눠 보내. 마지막에 "끝!"이라고 하면 그때 한 번에 정리해. 그 전에는 사진마다 짧게 확인만 해 줘.
 2. 장면마다 더캔이지추격깨(더블비·캔들·이평선·지지저항·추세선·이격도·깨짐) 중 어떤 근거가 겹쳤는지 표시해 줘. 근거가 3개 이상일 때 진입하는 게 원칙이야.
 3. 박스 이탈인지, 쌍바닥·쌍봉인지, 변곡인지, 돌파인지 같은 정의를 아래 [정의 사전]과 비교해서 확정하거나 수정해 줘. 달라진 점은 꼭 표로 알려 줘.
-4. 결과물: ① 강의 필기(노트 탭 'AI 정리' 양식: ### 제목 / 핵심 요약 / 핵심 포인트 / 매매 규칙 / 용어 / 질문할 것) ② 매매법별 전략 카드(### 전략 이름 / 핵심 요약 / 사용 종목·시간봉 / 진입 규칙 / 손절·청산 / 진입 금지 조건) ③ 백테스트 조건 코드({"app":"tradedesk-conds",...}) ④ 정의 사전 카드 업데이트본.
+4. 결과물: ① 강의 필기(노트 탭 'AI 정리' 양식: ### 제목 / 핵심 요약 / 핵심 포인트 / 매매 규칙 / 용어 / 질문할 것 / 연결 전략 — 연결 전략에는 관련 전략 카드 이름을 한 줄에 하나씩, 붙여넣으면 자동 연결됨) ② 매매법별 전략 카드(### 전략 이름 / 핵심 요약 / 사용 종목·시간봉 / 진입 규칙 / 손절·청산 / 진입 금지 조건) ③ 백테스트 조건 코드({"app":"tradedesk-conds",...}) ④ 정의 사전 카드 업데이트본.
 5. 백테스트에 필요한 조건이 앱에 없으면 trading.html의 조건 백테스트(CB_CONDS)에 추가하고 테스트해 줘. 조건마다 근거 카테고리(더·캔·이·지·추·격·깨)를 붙이고, '근거 최소 N개(필수 포함)'로 진입을 판단해.
 6. 강의 내용은 개인 교육 자료라서 공개 저장소에는 올리지 마. 정의와 전략은 내 앱(노트 탭)에만 보관해.
 
@@ -3217,6 +3217,8 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
 - 용어: 뜻
 ### 질문할 것
 - (강의에서 불분명했던 점, 더 확인할 점)
+### 연결 전략
+- (이 강의 내용이 들어가는 전략 카드 이름, 한 줄에 하나)
 
 [강의 내용]
 (여기에 자막, 직접 쓴 필기, 슬라이드 캡처 이미지를 넣어 주세요)`;
@@ -3272,6 +3274,18 @@ ${lessons.map(l => `- ${l.course || '강의'} ${l.no}회차: ${l.title || '(제�
           set('rules', pick(sec, '규칙'), '매매 규칙');
           set('terms', pick(sec, '용어'), '용어');
           set('questions', pick(sec, '질문'), '질문할 것');
+          const link = pick(sec, '연결');
+          if (link) {
+            const norm = x => String(x || '').replace(/[①-⑳★📖()\[\]\s·.,\-]/g, '').toLowerCase();
+            const hit = [], miss = [];
+            for (const raw of lines(link)) {
+              const k = norm(raw); if (!k) continue;
+              const st = S.strategies.find(x => norm(x.name) === k) || S.strategies.find(x => { const n = norm(x.name); return n && (n.includes(k) || k.includes(n)); });
+              if (st) { if (!l.strategyIds.includes(st.id)) l.strategyIds.push(st.id); hit.push(st.name); } else miss.push(raw);
+            }
+            if (hit.length) filled.push('연결 전략 ' + hit.length + '개');
+            if (miss.length) setTimeout(() => toast('전략 카드가 없어 연결 못 함: ' + miss.join(', ') + ' — 카드를 만든 뒤 다시 붙여넣거나 필기에서 직접 선택하세요', 5000), 3600);
+          }
         } else {
           const st = findSt(study.open); if (!st) return;
           const nm = (pick(sec, '이름') || '').split('\n')[0].trim();

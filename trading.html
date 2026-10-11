@@ -667,7 +667,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.10.0';
+  const APP_VERSION = 'v1.11.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2221,6 +2221,12 @@
       text: p => `매수: 아랫꼬리 / 매도: 윗꼬리가 봉 길이의 ${p.pct}% 이하` },
     longwick: { name: '긴 꼬리', params: [{ k: 'pct', label: '꼬리 ≥ 봉 길이 %', def: 40 }],
       text: p => `매수: 아랫꼬리 / 매도: 윗꼬리가 봉 길이의 ${p.pct}% 이상` },
+    pattern: { name: '도지·망치 캔들', params: [
+        { k: 'kind', label: '모양', opts: [['either', '도지 또는 망치'], ['doji', '도지만'], ['hammer', '망치만']], def: 'either' },
+        { k: 'doji', label: '도지: 몸통 ≤ 봉 길이 %', def: 10 },
+        { k: 'ratio', label: '망치: 긴 꼬리 ≥ 몸통 ×', def: 2 },
+        { k: 'opp', label: '망치: 반대 꼬리 ≤ 봉 길이 %', def: 15 }],
+      text: p => `${{ either: '도지 또는 망치', doji: '도지', hammer: '망치' }[p.kind] || '도지 또는 망치'} — 도지: 몸통이 봉 길이의 ${p.doji}% 이하 / 망치: 아랫꼬리가 몸통의 ${p.ratio}배 이상 + 윗꼬리 ${p.opp}% 이하 (매도는 거꾸로: 윗꼬리 긴 유성형)` },
     hold: { name: '저점(고점) 지킴', params: [], text: () => '매수: 저가가 직전 봉 저가 이상 / 매도: 고가가 직전 봉 고가 이하' },
     turn: { name: '밴드 기울기 멈춤', params: [{ k: 'line', label: '선', opts: [['b1o', '① 바깥선'], ['mid', '① 중심선'], ['b2o', '② 바깥선']], def: 'b1o' }],
       text: p => `매수: ${p.line === 'mid' ? '① 중심선' : p.line === 'b2o' ? '② 하단선' : '① 하단선'}이 더 내려가지 않음 / 매도: ${p.line === 'mid' ? '중심선' : '상단선'}이 더 올라가지 않음` },
@@ -2257,7 +2263,7 @@
   // 더캔이지추격깨: 조건마다 근거 카테고리를 붙이고, 겹친 카테고리 수로 진입 여부를 판단
   const CB_CATS = ['더', '캔', '이', '지', '추', '격', '깨'];
   const CB_CAT_NAME = { 더: '더블비', 캔: '캔들', 이: '이평선', 지: '지지·저항', 추: '추세선·패턴', 격: '이격도·RSI', 깨: '깨짐(돌파)' };
-  const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', candle: '캔', nowick: '캔', longwick: '캔', strong: '캔', hold: '지',
+  const CB_CAT_DEF = { touch: '더', inside: '더', turn: '더', expand: '더', candle: '캔', nowick: '캔', longwick: '캔', pattern: '캔', strong: '캔', hold: '지',
     ma: '이', stack: '이', matouch: '이', maside: '이', zone: '지', pullcnt: '이', ext: '이', nbrk: '깨', daybrk: '깨', dbl: '추', move: '추', div: '격', rsi3: '격', time: '' };
   const catBit = c => { const k = CB_CATS.indexOf(c.cat); return k < 0 ? 0 : 1 << k; };
   const catCount = m => { let n = 0; for (; m; m &= m - 1) n++; return n; };
@@ -2551,6 +2557,14 @@
         const rng = h - l; if (!(rng > 0)) return false;
         const w = buy ? Math.min(o, cl) - l : h - Math.max(o, cl), lim = rng * (num(p.pct) ?? 0) / 100;
         return c.type === 'nowick' ? w <= lim : w >= lim;
+      }
+      case 'pattern': {
+        const rng = h - l; if (!(rng > 0)) return false;
+        const body = Math.abs(cl - o), kind = p.kind || 'either';
+        const doji = body <= rng * (num(p.doji) ?? 10) / 100;
+        const lw = buy ? Math.min(o, cl) - l : h - Math.max(o, cl), ow = buy ? h - Math.max(o, cl) : Math.min(o, cl) - l;
+        const ham = body > 0 && lw >= body * (num(p.ratio) ?? 2) && ow <= rng * (num(p.opp) ?? 15) / 100;
+        return kind === 'doji' ? doji : kind === 'hammer' ? ham : doji || ham;
       }
       case 'hold': return i > 0 && (buy ? l >= B.l[i - 1] : h <= B.h[i - 1]);
       case 'turn': {

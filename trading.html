@@ -667,7 +667,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.11.0';
+  const APP_VERSION = 'v1.11.1';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2377,6 +2377,17 @@
     if (out.t[0] > out.t[n - 1]) for (const k of 't o h l c'.split(' ')) out[k].reverse();
     return out;
   }
+  // 크롬·엣지: 파일 선택 창이 지난번에 열었던 폴더에서 바로 열림 (id가 같으면 브라우저가 폴더를 기억). 막힌 환경은 기본 선택 창으로
+  async function cbPickFile() {
+    if (window.showOpenFilePicker) {
+      try {
+        const [h] = await window.showOpenFilePicker({ id: 'tradedesk-m1', startIn: 'documents', multiple: false,
+          types: [{ description: '1분봉 CSV', accept: { 'text/csv': ['.csv', '.txt'] } }] });
+        cbImportFile(await h.getFile()); return;
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    $('#cbFile').click();
+  }
   async function cbImportFile(f) {
     try {
       const D = parseM1(await f.text());
@@ -3939,7 +3950,7 @@ ${lines(st.avoid).map(x => '- ' + x).join('\n') || '(없음)'}
         const lb = document.createElement('div'); lb.className = 'lightbox';
         lb.innerHTML = `<img src="${src}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb); break;
       }
-      case 'cb-file': $('#cbFile').click(); break;
+      case 'cb-file': cbPickFile(); break;
       case 'cb-run': if (!cb.busy) cbRun(); break;
       case 'cmp-all': cbCompareAll(); break;
       case 'cmp-pick': cbLoadStrategy(el.dataset.id); $('#cbCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;

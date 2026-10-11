@@ -667,7 +667,7 @@
   /* =========================================================
      상수 & 기본값
      ========================================================= */
-  const APP_VERSION = 'v1.11.1';
+  const APP_VERSION = 'v1.12.0';
   const CAN_DOWNLOAD = true; // 파일 다운로드가 막힌 환경(미리보기)에서는 false
   const KEY = 'tradedesk.v1';
   const CALC_KEY = 'tradedesk.calc';
@@ -2394,13 +2394,21 @@
       const guess = (f.name.match(/^([A-Za-z0-9.#]+?)(?:[_\- ]M1|[_\- ]|\.)/) || [])[1] || 'DATA';
       const name = guess.toUpperCase();
       D.name = name; D.file = f.name;
+      // 같은 이름의 데이터가 이미 있으면 새 CSV를 이어붙임 (겹치는 시각은 새 파일 값으로) → 날짜가 흐를수록 CSV만 새로 열면 기간이 늘어남
+      const old = await cbGetData(name), before = old ? old.t.length : 0;
+      if (old) {
+        const idx = new Map(); const K = ['t', 'o', 'h', 'l', 'c'];
+        for (const src of [old, D]) for (let i = 0; i < src.t.length; i++) idx.set(src.t[i], [src.t[i], src.o[i], src.h[i], src.l[i], src.c[i]]);
+        const rows = [...idx.values()].sort((a, b) => a[0] - b[0]);
+        K.forEach((k, j) => { D[k] = Float64Array.from(rows, r => r[j]); });
+      }
       BARS[name] = D;
       try { await barsReq('readwrite', st => st.put(D, name)); } catch (e) { toast('⚠ 브라우저 저장이 안 돼서 이번 창에서만 쓸 수 있어요', 3500); }
       const tz = cbDetectTZ(D);
       cb.syms[name] = { ...(cb.syms[name] || { point: cbPointDefault(name) }), gmt: tz ? tz.gmt : 2, dst: tz ? tz.dst : true, tz: tz ? 'auto' : 'fail' };
       cb.data = name; cbSave(); await cbRefreshKeys(); if (!cb.keys.includes(name)) cb.keys.push(name), cb.data = name;
       cb.res = null; renderCB();
-      toast(`${name} 1분봉 ${D.t.length.toLocaleString()}개를 불러왔습니다`);
+      toast(before ? `${name} 1분봉에 새 봉 ${(D.t.length - before).toLocaleString()}개를 이어붙였습니다 (총 ${D.t.length.toLocaleString()}개)` : `${name} 1분봉 ${D.t.length.toLocaleString()}개를 불러왔습니다`);
     } catch (err) { toast('⚠ ' + err.message, 4000); }
   }
 
@@ -2880,7 +2888,7 @@
         ${cb.keys.length ? `<select id="cbData" style="width:auto">${cbOpts(cb.keys.map(k => [k, k]), cb.data)}</select>
           <button class="btn sm danger" data-action="cb-data-del">이 데이터 지우기</button>` : ''}
       </div>
-      ${cb.data && meta ? `<div class="sub" style="font-size:.76rem;margin:8px 0" id="cbDataInfo">${D ? `${D.t.length.toLocaleString()}개 · ${isoOf(kstOf(D.t[0], meta)).replace('T', ' ')} ~ ${isoOf(kstOf(D.t[D.t.length - 1], meta)).replace('T', ' ')} (한국 시간)` : '불러오는 중…'}</div>
+      ${cb.data && meta ? `<div class="sub" style="font-size:.76rem;margin:8px 0" id="cbDataInfo">${D ? `${D.t.length.toLocaleString()}개 · ${isoOf(kstOf(D.t[0], meta)).replace('T', ' ')} ~ ${isoOf(kstOf(D.t[D.t.length - 1], meta)).replace('T', ' ')} (한국 시간) · 더 최근 날짜는 새 CSV를 열면 이어붙어요` : '불러오는 중…'}</div>
         ${meta.tz === 'fail' ? `<div class="alert" style="margin-bottom:8px">서버 시간대를 자동으로 찾지 못해 기본값(GMT+2, 미국 서머타임 따름)을 씁니다. 대부분의 브로커가 이 값이에요. 위에 보이는 마지막 봉 시각이 실제 한국 시간과 다르면 아래 '직접 바꾸기'에서 고쳐 주세요.</div>` : ''}
         <details class="help" style="margin-top:0"${meta.tz === 'fail' ? ' open' : ''}>
           <summary>자동 설정: 서버 GMT+${meta.gmt}${meta.dst ? ' (여름엔 +' + (num(meta.gmt) + 1) + ')' : ''} → 한국 시간으로 변환 · 1pt = 가격 ${meta.point} 움직임 (직접 바꾸기)</summary>
